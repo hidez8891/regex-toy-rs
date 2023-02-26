@@ -1,4 +1,3 @@
-use super::action::Action;
 use crate::parser::{SyntaxKind, SyntaxNode};
 use std::collections::{HashSet, VecDeque};
 
@@ -13,8 +12,14 @@ pub struct NfaNode {
 }
 
 pub struct NfaEdge {
-    pub action: Action,
+    pub action: NfaAction,
     pub next_id: usize,
+}
+
+pub enum NfaAction {
+    Asap,
+    Match(char),
+    MatchAny,
 }
 
 impl Nfa {
@@ -59,7 +64,7 @@ impl Nfa {
 
             for edge in &self.nodes[*id].nexts {
                 match edge.action {
-                    Action::Asap => {
+                    NfaAction::Asap => {
                         queue_ids.push_back(&edge.next_id);
                     }
                     _ => {
@@ -85,13 +90,13 @@ impl Nfa {
 
             for edge in &self.nodes[*id].nexts {
                 match edge.action {
-                    Action::Asap => {
+                    NfaAction::Asap => {
                         queue_ids.push_back(&edge.next_id);
                     }
-                    Action::MatchAny => {
+                    NfaAction::MatchAny => {
                         next_ids.insert(edge.next_id);
                     }
-                    Action::Match(t) => {
+                    NfaAction::Match(t) => {
                         if t == c {
                             next_ids.insert(edge.next_id);
                         }
@@ -110,7 +115,7 @@ impl Nfa {
     fn make(&mut self, syntax: &SyntaxNode) {
         let node_id = self.make_root(syntax, 1);
         self.nodes[0].nexts.push(NfaEdge {
-            action: Action::Asap,
+            action: NfaAction::Asap,
             next_id: node_id,
         });
     }
@@ -146,7 +151,7 @@ impl Nfa {
         for child in syntax.children.iter() {
             let match_id = self.make_root(child, dst_id);
             self.nodes[node_id].nexts.push(NfaEdge {
-                action: Action::Asap,
+                action: NfaAction::Asap,
                 next_id: match_id,
             });
         }
@@ -159,14 +164,14 @@ impl Nfa {
         self.nodes.push(NfaNode {
             id: loop_id,
             nexts: vec![NfaEdge {
-                action: Action::Asap,
+                action: NfaAction::Asap,
                 next_id: dst_id,
             }],
         });
 
         let match_id = self.make_root(&syntax.children[0], loop_id);
         self.nodes[loop_id].nexts.push(NfaEdge {
-            action: Action::Asap,
+            action: NfaAction::Asap,
             next_id: match_id,
         });
 
@@ -178,14 +183,14 @@ impl Nfa {
         self.nodes.push(NfaNode {
             id: loop_id,
             nexts: vec![NfaEdge {
-                action: Action::Asap,
+                action: NfaAction::Asap,
                 next_id: dst_id,
             }],
         });
 
         let match_id = self.make_root(&syntax.children[0], loop_id);
         self.nodes[loop_id].nexts.push(NfaEdge {
-            action: Action::Asap,
+            action: NfaAction::Asap,
             next_id: match_id,
         });
 
@@ -197,14 +202,14 @@ impl Nfa {
         self.nodes.push(NfaNode {
             id: node_id,
             nexts: vec![NfaEdge {
-                action: Action::Asap,
+                action: NfaAction::Asap,
                 next_id: dst_id,
             }],
         });
 
         let match_id = self.make_root(&syntax.children[0], dst_id);
         self.nodes[node_id].nexts.push(NfaEdge {
-            action: Action::Asap,
+            action: NfaAction::Asap,
             next_id: match_id,
         });
 
@@ -216,7 +221,7 @@ impl Nfa {
         self.nodes.push(NfaNode {
             id: node_id,
             nexts: vec![NfaEdge {
-                action: Action::MatchAny,
+                action: NfaAction::MatchAny,
                 next_id: dst_id,
             }],
         });
@@ -229,7 +234,7 @@ impl Nfa {
         self.nodes.push(NfaNode {
             id: node_id,
             nexts: vec![NfaEdge {
-                action: Action::Match(c),
+                action: NfaAction::Match(c),
                 next_id: dst_id,
             }],
         });

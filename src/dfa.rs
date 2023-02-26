@@ -1,2 +1,2 @@
-pub mod action;
+pub mod dfa;
 pub mod nfa;
