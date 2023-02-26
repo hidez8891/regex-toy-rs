@@ -141,9 +141,7 @@ impl Parser {
 
                 match self.stream.next() {
                     Some(')') => Ok(node),
-                    Some(c) => {
-                        Err(format!("closing parentheses do not match, get '{}'", c).to_owned())
-                    }
+                    Some(c) => Err(format!("closing parentheses do not match, get '{}'", c)),
                     _ => Err("closing parentheses do not match, get EOL".to_owned()),
                 }
             }

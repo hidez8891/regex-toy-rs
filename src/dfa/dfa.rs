@@ -1,8 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
-
-use crate::parser::SyntaxNode;
-
 use super::nfa::{Nfa, NfaAction};
+use crate::parser::SyntaxNode;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub struct Dfa {
     ids: BTreeMap<BTreeSet<usize>, usize>,
@@ -47,7 +45,7 @@ impl Dfa {
     fn make(&mut self, nfa: &Nfa) {
         // initial state
         let mut root_nfa_ids = BTreeSet::new();
-        root_nfa_ids.insert(0 as usize);
+        root_nfa_ids.insert(0);
         root_nfa_ids = nfa.solve_asap(root_nfa_ids);
 
         self.ids.insert(root_nfa_ids.clone(), 0);

@@ -37,7 +37,7 @@ impl Nfa {
 
     pub fn is_match(&self, str: String) -> bool {
         let mut current = BTreeSet::new();
-        current.insert(0 as usize);
+        current.insert(0);
         current = self.solve_asap(current);
 
         for c in str.chars() {
