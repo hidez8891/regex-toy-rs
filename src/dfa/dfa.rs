@@ -10,7 +10,6 @@ pub struct Dfa {
 }
 
 struct DfaNode {
-    id: usize,
     trans: BTreeMap<char, usize>,
     any_trans: Option<usize>,
     is_submit: bool,
@@ -53,7 +52,6 @@ impl Dfa {
 
         self.ids.insert(root_nfa_ids.clone(), 0);
         self.nodes.push(DfaNode {
-            id: 0,
             trans: BTreeMap::new(),
             any_trans: None,
             is_submit: false,
@@ -99,7 +97,6 @@ impl Dfa {
                     let new_dfa_id = self.nodes.len();
                     self.ids.insert(next_nfa_ids.clone(), new_dfa_id);
                     self.nodes.push(DfaNode {
-                        id: new_dfa_id,
                         trans: BTreeMap::new(),
                         any_trans: None,
                         is_submit: next_nfa_ids.contains(&1),

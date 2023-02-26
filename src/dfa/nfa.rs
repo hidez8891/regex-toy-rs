@@ -7,7 +7,6 @@ pub struct Nfa {
 
 #[derive(Default)]
 pub struct NfaNode {
-    pub id: usize,
     pub nexts: Vec<NfaEdge>,
 }
 
@@ -25,10 +24,8 @@ pub enum NfaAction {
 
 impl Nfa {
     pub fn new(node: &SyntaxNode) -> Nfa {
-        let mut root = NfaNode::default();
-        root.id = 0;
-        let mut submit = NfaNode::default();
-        submit.id = 1;
+        let root = NfaNode::default();
+        let submit = NfaNode::default();
 
         let mut nfa = Nfa {
             nodes: vec![root, submit],
@@ -148,10 +145,7 @@ impl Nfa {
 
     fn make_select(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let node_id = self.getid();
-        self.nodes.push(NfaNode {
-            id: node_id,
-            nexts: vec![],
-        });
+        self.nodes.push(NfaNode { nexts: vec![] });
 
         for child in syntax.children.iter() {
             let match_id = self.make_root(child, dst_id);
@@ -167,7 +161,6 @@ impl Nfa {
     fn make_zero_loop(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let loop_id = self.getid();
         self.nodes.push(NfaNode {
-            id: loop_id,
             nexts: vec![NfaEdge {
                 action: NfaAction::Asap,
                 next_id: dst_id,
@@ -186,7 +179,6 @@ impl Nfa {
     fn make_more_loop(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let loop_id = self.getid();
         self.nodes.push(NfaNode {
-            id: loop_id,
             nexts: vec![NfaEdge {
                 action: NfaAction::Asap,
                 next_id: dst_id,
@@ -205,7 +197,6 @@ impl Nfa {
     fn make_option(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let node_id = self.getid();
         self.nodes.push(NfaNode {
-            id: node_id,
             nexts: vec![NfaEdge {
                 action: NfaAction::Asap,
                 next_id: dst_id,
@@ -224,7 +215,6 @@ impl Nfa {
     fn make_match_any(&mut self, dst_id: usize) -> usize {
         let node_id = self.getid();
         self.nodes.push(NfaNode {
-            id: node_id,
             nexts: vec![NfaEdge {
                 action: NfaAction::MatchAny,
                 next_id: dst_id,
@@ -237,7 +227,6 @@ impl Nfa {
     fn make_match_char(&mut self, c: char, dst_id: usize) -> usize {
         let node_id = self.getid();
         self.nodes.push(NfaNode {
-            id: node_id,
             nexts: vec![NfaEdge {
                 action: NfaAction::Match(c),
                 next_id: dst_id,
