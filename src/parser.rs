@@ -23,9 +23,13 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(input: String) -> Self {
+    pub fn new(pattern: String) -> Self {
         Parser {
-            stream: input.chars().collect::<Vec<char>>().into_iter().peekable(),
+            stream: pattern
+                .chars()
+                .collect::<Vec<char>>()
+                .into_iter()
+                .peekable(),
         }
     }
 
