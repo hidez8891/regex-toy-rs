@@ -1,8 +1,8 @@
 use crate::parser::{SyntaxKind, SyntaxNode};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 
 pub struct Nfa {
-    nodes: Vec<NfaNode>,
+    pub nodes: Vec<NfaNode>,
 }
 
 #[derive(Default)]
@@ -16,6 +16,7 @@ pub struct NfaEdge {
     pub next_id: usize,
 }
 
+#[derive(PartialEq, PartialOrd, Eq, Ord, Clone)]
 pub enum NfaAction {
     Asap,
     Match(char),
@@ -38,7 +39,7 @@ impl Nfa {
     }
 
     pub fn is_match(&self, str: String) -> bool {
-        let mut current = HashSet::new();
+        let mut current = BTreeSet::new();
         current.insert(0 as usize);
         current = self.solve_asap(current);
 
@@ -53,11 +54,11 @@ impl Nfa {
         current.contains(&1)
     }
 
-    fn solve_asap(&self, ids: HashSet<usize>) -> HashSet<usize> {
-        let mut next_ids = HashSet::new();
+    pub fn solve_asap(&self, ids: BTreeSet<usize>) -> BTreeSet<usize> {
+        let mut next_ids = BTreeSet::new();
 
         let mut queue_ids = VecDeque::from_iter(ids.iter());
-        let mut finished = HashSet::new();
+        let mut finished = BTreeSet::new();
         while let Some(id) = queue_ids.pop_front() {
             if finished.contains(id) {
                 continue;
@@ -88,8 +89,8 @@ impl Nfa {
         next_ids
     }
 
-    fn solve_match_char(&self, c: char, ids: HashSet<usize>) -> HashSet<usize> {
-        let mut next_ids = HashSet::new();
+    fn solve_match_char(&self, c: char, ids: BTreeSet<usize>) -> BTreeSet<usize> {
+        let mut next_ids = BTreeSet::new();
 
         for id in ids {
             for edge in &self.nodes[id].nexts {
