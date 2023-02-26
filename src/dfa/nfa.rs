@@ -40,15 +40,16 @@ impl Nfa {
     pub fn is_match(&self, str: String) -> bool {
         let mut current = HashSet::new();
         current.insert(0 as usize);
+        current = self.solve_asap(current);
 
         for c in str.chars() {
             if current.is_empty() {
                 return false;
             }
             current = self.solve_match_char(c, current);
+            current = self.solve_asap(current);
         }
 
-        current = self.solve_asap(current);
         current.contains(&1)
     }
 
@@ -56,19 +57,29 @@ impl Nfa {
         let mut next_ids = HashSet::new();
 
         let mut queue_ids = VecDeque::from_iter(ids.iter());
+        let mut finished = HashSet::new();
         while let Some(id) = queue_ids.pop_front() {
-            if next_ids.contains(id) {
+            if finished.contains(id) {
                 continue;
             }
-            next_ids.insert(*id);
+            finished.insert(*id);
+
+            // submit node (id=1) have no edges.
+            if *id == 1 {
+                next_ids.insert(*id);
+                continue;
+            }
 
             for edge in &self.nodes[*id].nexts {
                 match edge.action {
                     NfaAction::Asap => {
                         queue_ids.push_back(&edge.next_id);
                     }
-                    _ => {
-                        // fall through
+                    NfaAction::MatchAny => {
+                        next_ids.insert(*id);
+                    }
+                    NfaAction::Match(_) => {
+                        next_ids.insert(*id);
                     }
                 }
             }
@@ -80,18 +91,11 @@ impl Nfa {
     fn solve_match_char(&self, c: char, ids: HashSet<usize>) -> HashSet<usize> {
         let mut next_ids = HashSet::new();
 
-        let mut queue_ids = VecDeque::from_iter(ids.iter());
-        let mut finished = HashSet::new();
-        while let Some(id) = queue_ids.pop_front() {
-            if finished.contains(id) {
-                continue;
-            }
-            finished.insert(*id);
-
-            for edge in &self.nodes[*id].nexts {
+        for id in ids {
+            for edge in &self.nodes[id].nexts {
                 match edge.action {
                     NfaAction::Asap => {
-                        queue_ids.push_back(&edge.next_id);
+                        // nothing to do
                     }
                     NfaAction::MatchAny => {
                         next_ids.insert(edge.next_id);
