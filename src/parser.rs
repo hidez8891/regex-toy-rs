@@ -44,10 +44,22 @@ impl Parser {
             Some('|') => {
                 self.stream.next();
                 let rhs = self.parse_select()?;
-                Ok(SyntaxNode {
-                    kind: SyntaxKind::Select,
-                    children: vec![node, rhs],
-                })
+
+                match rhs.kind {
+                    SyntaxKind::Select => {
+                        let mut children = vec![node];
+                        children.extend(rhs.children);
+
+                        Ok(SyntaxNode {
+                            kind: SyntaxKind::Select,
+                            children,
+                        })
+                    }
+                    _ => Ok(SyntaxNode {
+                        kind: SyntaxKind::Select,
+                        children: vec![node, rhs],
+                    }),
+                }
             }
             _ => Ok(node),
         }
@@ -198,24 +210,19 @@ mod tests {
                     ],
                 ),
                 make2(
-                    SyntaxKind::Select,
+                    SyntaxKind::Group,
                     vec![
-                        make2(
-                            SyntaxKind::Group,
-                            vec![
-                                make1(SyntaxKind::Match('d')),
-                                make1(SyntaxKind::Match('e')),
-                                make1(SyntaxKind::Match('f')),
-                            ],
-                        ),
-                        make2(
-                            SyntaxKind::Group,
-                            vec![
-                                make1(SyntaxKind::Match('g')),
-                                make1(SyntaxKind::Match('h')),
-                                make1(SyntaxKind::Match('i')),
-                            ],
-                        ),
+                        make1(SyntaxKind::Match('d')),
+                        make1(SyntaxKind::Match('e')),
+                        make1(SyntaxKind::Match('f')),
+                    ],
+                ),
+                make2(
+                    SyntaxKind::Group,
+                    vec![
+                        make1(SyntaxKind::Match('g')),
+                        make1(SyntaxKind::Match('h')),
+                        make1(SyntaxKind::Match('i')),
                     ],
                 ),
             ],
