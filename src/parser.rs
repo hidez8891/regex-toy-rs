@@ -1,15 +1,27 @@
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
+// reference
+// https://stackoverflow.com/questions/265457/regex-bnf-grammar
+// https://www2.cs.sfu.ca/~cameron/Teaching/384/99-3/regexp-plg.html
+
+const META_CHARS: [char; 11] = ['(', ')', '|', '*', '+', '?', '.', '[', ']', '^', '-'];
+
 #[derive(Debug, PartialEq)]
 pub enum SyntaxKind {
-    Group,
-    Select,
-    ZeroLoop,
-    MoreLoop,
-    Option,
-    MatchAny,
-    Match(char),
+    Group,                  // '(' abc ')'
+    Union,                  // abc '|' abc
+    LongestStar,            // a '*'
+    LongestPlus,            // a '+'
+    ShortestStar,           // a '*?'
+    ShortestPlus,           // a '+?'
+    Option,                 // a '?'
+    MatchAny,               // '.'
+    Match(char),            // a
+    PositiveSet,            // '[' a b c ']
+    NegativeSet,            // '[^' a b c ']
+    MatchRange(char, char), // a '-' z
+    None,
 }
 
 #[derive(Debug, PartialEq)]
@@ -34,89 +46,114 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Result<SyntaxNode, String> {
-        self.parse_root()
+        let node = self.parse_root()?;
+        match self.stream.next() {
+            Some(c) => Err(format!("invalid parsing: {}", c)),
+            None => Ok(node),
+        }
     }
 
     fn parse_root(&mut self) -> Result<SyntaxNode, String> {
-        self.parse_select()
+        self.parse_union()
     }
 
-    fn parse_select(&mut self) -> Result<SyntaxNode, String> {
-        let node = self.parse_conjunct()?;
+    fn parse_union(&mut self) -> Result<SyntaxNode, String> {
+        let node = self.parse_concat()?;
+        if node.kind == SyntaxKind::None {
+            return Ok(node);
+        }
 
         match self.stream.peek() {
             Some('|') => {
-                self.stream.next();
-                let rhs = self.parse_select()?;
+                let mut children = vec![node];
 
-                match rhs.kind {
-                    SyntaxKind::Select => {
-                        let mut children = vec![node];
-                        children.extend(rhs.children);
+                while let Some('|') = self.stream.peek() {
+                    self.stream.next();
 
-                        Ok(SyntaxNode {
-                            kind: SyntaxKind::Select,
-                            children,
-                        })
+                    let rhs = self.parse_concat()?;
+                    if rhs.kind == SyntaxKind::None {
+                        return Err("missing element for union operator".to_owned());
                     }
-                    _ => Ok(SyntaxNode {
-                        kind: SyntaxKind::Select,
-                        children: vec![node, rhs],
-                    }),
+                    children.push(rhs);
                 }
+
+                Ok(SyntaxNode {
+                    kind: SyntaxKind::Union,
+                    children,
+                })
             }
             _ => Ok(node),
         }
     }
 
-    fn parse_conjunct(&mut self) -> Result<SyntaxNode, String> {
+    fn parse_concat(&mut self) -> Result<SyntaxNode, String> {
         let mut children = Vec::new();
         loop {
-            match self.stream.peek() {
-                Some('|') | Some(')') | None => {
-                    break;
-                }
+            let node = self.parse_basic()?;
+
+            match node.kind {
+                SyntaxKind::None => break,
                 _ => {
-                    let node = self.parse_loop()?;
                     children.push(node);
                 }
             }
         }
 
-        Ok(SyntaxNode {
-            kind: SyntaxKind::Group,
-            children,
-        })
+        match children.len() {
+            0 => Ok(SyntaxNode {
+                kind: SyntaxKind::None,
+                children: vec![],
+            }),
+            1 => Ok(children.pop().unwrap()),
+            _ => Ok(SyntaxNode {
+                kind: SyntaxKind::Group,
+                children,
+            }),
+        }
     }
 
-    fn parse_loop(&mut self) -> Result<SyntaxNode, String> {
-        let node = self.parse_option()?;
+    fn parse_basic(&mut self) -> Result<SyntaxNode, String> {
+        let node = self.parse_element()?;
+        if node.kind == SyntaxKind::None {
+            return Ok(node);
+        }
 
         match self.stream.peek() {
             Some('*') => {
                 self.stream.next();
+
+                let kind = match self.stream.peek() {
+                    Some('?') => {
+                        self.stream.next();
+                        SyntaxKind::ShortestStar
+                    }
+                    _ => SyntaxKind::LongestStar,
+                };
+
                 Ok(SyntaxNode {
-                    kind: SyntaxKind::ZeroLoop,
+                    kind,
                     children: vec![node],
                 })
             }
             Some('+') => {
                 self.stream.next();
+
+                let kind = match self.stream.peek() {
+                    Some('?') => {
+                        self.stream.next();
+                        SyntaxKind::ShortestPlus
+                    }
+                    _ => SyntaxKind::LongestPlus,
+                };
+
                 Ok(SyntaxNode {
-                    kind: SyntaxKind::MoreLoop,
+                    kind,
                     children: vec![node],
                 })
             }
-            _ => Ok(node),
-        }
-    }
-
-    fn parse_option(&mut self) -> Result<SyntaxNode, String> {
-        let node = self.parse_match()?;
-
-        match self.stream.peek() {
             Some('?') => {
                 self.stream.next();
+
                 Ok(SyntaxNode {
                     kind: SyntaxKind::Option,
                     children: vec![node],
@@ -126,35 +163,146 @@ impl Parser {
         }
     }
 
-    fn parse_match(&mut self) -> Result<SyntaxNode, String> {
+    fn parse_element(&mut self) -> Result<SyntaxNode, String> {
         match self.stream.peek() {
-            Some('.') => {
-                self.stream.next();
-                Ok(SyntaxNode {
-                    kind: SyntaxKind::MatchAny,
-                    children: vec![],
-                })
-            }
-            Some('(') => {
-                self.stream.next();
-                let node = self.parse_root()?;
+            Some('(') => self.parse_group(),
+            Some('[') => self.parse_set(),
+            Some('.') => self.parse_anychar(),
+            _ => self.parse_char(),
+        }
+    }
 
-                match self.stream.next() {
-                    Some(')') => Ok(node),
-                    Some(c) => Err(format!("closing parentheses do not match, get '{}'", c)),
-                    _ => Err("closing parentheses do not match, get EOL".to_owned()),
+    fn parse_group(&mut self) -> Result<SyntaxNode, String> {
+        self.stream.next(); // consume '('
+
+        let node = self.parse_root()?;
+        if node.kind == SyntaxKind::None {
+            return Ok(node);
+        }
+
+        match self.stream.next() {
+            Some(')') => Ok(node),
+            Some(c) => Err(format!("closing parentheses do not match, get '{}'", c)),
+            _ => Err("closing parentheses do not match, get EOL".to_owned()),
+        }
+    }
+
+    fn parse_set(&mut self) -> Result<SyntaxNode, String> {
+        self.stream.next(); // consume '['
+
+        let is_negative = self.stream.next_if_eq(&'^').is_some();
+        let node = self.parse_set_items()?;
+
+        match self.stream.next() {
+            Some(']') => {
+                if is_negative {
+                    Ok(SyntaxNode {
+                        kind: SyntaxKind::NegativeSet,
+                        children: node.children,
+                    })
+                } else {
+                    Ok(SyntaxNode {
+                        kind: SyntaxKind::PositiveSet,
+                        children: node.children,
+                    })
                 }
             }
-            Some(_) => {
+            Some(c) => Err(format!("closing brackets do not match, get '{}'", c)),
+            _ => Err("closing brackets do not match, get EOL".to_owned()),
+        }
+    }
+
+    fn parse_set_items(&mut self) -> Result<SyntaxNode, String> {
+        let mut children = Vec::new();
+        loop {
+            let node = self.parse_set_item()?;
+
+            match node.kind {
+                SyntaxKind::None => break,
+                _ => {
+                    children.push(node);
+                }
+            }
+        }
+
+        match children.len() {
+            0 => Err("set items are empty".to_owned()),
+            _ => Ok(SyntaxNode {
+                kind: SyntaxKind::Group,
+                children,
+            }),
+        }
+    }
+
+    fn parse_set_item(&mut self) -> Result<SyntaxNode, String> {
+        let node = self.parse_char()?;
+        if node.kind == SyntaxKind::None {
+            return Ok(node);
+        }
+
+        match self.stream.peek() {
+            Some('-') => {
+                self.stream.next();
+
+                let rhs = self.parse_char()?;
+                if rhs.kind == SyntaxKind::None {
+                    return Err("missing item for range end".to_owned());
+                }
+
+                if let (SyntaxKind::Match(a), SyntaxKind::Match(b)) = (node.kind, rhs.kind) {
+                    Ok(SyntaxNode {
+                        kind: SyntaxKind::MatchRange(a, b),
+                        children: vec![],
+                    })
+                } else {
+                    unreachable!()
+                }
+            }
+            _ => Ok(node),
+        }
+    }
+
+    fn parse_anychar(&mut self) -> Result<SyntaxNode, String> {
+        self.stream.next(); // consume '.'
+
+        Ok(SyntaxNode {
+            kind: SyntaxKind::MatchAny,
+            children: vec![],
+        })
+    }
+
+    fn parse_char(&mut self) -> Result<SyntaxNode, String> {
+        match self.stream.peek() {
+            Some('\\') => self.parse_metachar(),
+            Some(c) if !META_CHARS.contains(c) => {
                 let c = self.stream.next().unwrap();
                 Ok(SyntaxNode {
                     kind: SyntaxKind::Match(c),
                     children: vec![],
                 })
             }
-            _ => {
-                unreachable!()
+            _ => Ok(SyntaxNode {
+                kind: SyntaxKind::None,
+                children: vec![],
+            }),
+        }
+    }
+
+    fn parse_metachar(&mut self) -> Result<SyntaxNode, String> {
+        self.stream.next(); // consume '\\'
+
+        match self.stream.next() {
+            Some(c) => {
+                if META_CHARS.contains(&c) {
+                    Ok(SyntaxNode {
+                        kind: SyntaxKind::Match(c),
+                        children: vec![],
+                    })
+                } else {
+                    Err(format!("unsupport escape sequence: \\{}", c))
+                }
             }
+            _ => Err("escape sequence is empty".to_owned()),
         }
     }
 }
@@ -162,6 +310,11 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn run(pattern: &str) -> Result<SyntaxNode, String> {
+        let mut parser = Parser::new(pattern.to_owned());
+        parser.parse()
+    }
 
     fn make1(kind: SyntaxKind) -> SyntaxNode {
         SyntaxNode {
@@ -175,12 +328,8 @@ mod tests {
     }
 
     #[test]
-    fn basic() {
-        let src = "abc".to_owned();
-
-        let mut parser = Parser::new(src);
-        let result = parser.parse();
-
+    fn match_char() {
+        let src = "abc";
         let expect = Ok(make2(
             SyntaxKind::Group,
             vec![
@@ -190,18 +339,90 @@ mod tests {
             ],
         ));
 
-        assert_eq!(result, expect);
+        assert_eq!(run(src), expect);
     }
 
     #[test]
-    fn select() {
-        let src = "abc|def|ghi".to_owned();
-
-        let mut parser = Parser::new(src);
-        let result = parser.parse();
-
+    fn match_metachar() {
+        let src = r"a\+c";
         let expect = Ok(make2(
-            SyntaxKind::Select,
+            SyntaxKind::Group,
+            vec![
+                make1(SyntaxKind::Match('a')),
+                make1(SyntaxKind::Match('+')),
+                make1(SyntaxKind::Match('c')),
+            ],
+        ));
+
+        assert_eq!(run(src), expect);
+    }
+
+    #[test]
+    fn match_any() {
+        {
+            let src = "a.c";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::MatchAny),
+                    make1(SyntaxKind::Match('c')),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "a.";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![make1(SyntaxKind::Match('a')), make1(SyntaxKind::MatchAny)],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+    }
+
+    #[test]
+    fn group() {
+        {
+            let src = "a(bc)d";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(
+                        SyntaxKind::Group,
+                        vec![make1(SyntaxKind::Match('b')), make1(SyntaxKind::Match('c'))],
+                    ),
+                    make1(SyntaxKind::Match('d')),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "a(bc)";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(
+                        SyntaxKind::Group,
+                        vec![make1(SyntaxKind::Match('b')), make1(SyntaxKind::Match('c'))],
+                    ),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+    }
+
+    #[test]
+    fn union() {
+        let src = "abc|def|ghi";
+        let expect = Ok(make2(
+            SyntaxKind::Union,
             vec![
                 make2(
                     SyntaxKind::Group,
@@ -230,159 +451,309 @@ mod tests {
             ],
         ));
 
-        assert_eq!(result, expect);
+        assert_eq!(run(src), expect);
     }
 
     #[test]
-    fn zero_loop() {
-        let src = "ab*c".to_owned();
+    fn longest_star() {
+        {
+            let src = "ab*c";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(SyntaxKind::LongestStar, vec![make1(SyntaxKind::Match('b'))]),
+                    make1(SyntaxKind::Match('c')),
+                ],
+            ));
 
-        let mut parser = Parser::new(src);
-        let result = parser.parse();
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "ab*";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(SyntaxKind::LongestStar, vec![make1(SyntaxKind::Match('b'))]),
+                ],
+            ));
 
-        let expect = Ok(make2(
-            SyntaxKind::Group,
-            vec![
-                make1(SyntaxKind::Match('a')),
-                make2(SyntaxKind::ZeroLoop, vec![make1(SyntaxKind::Match('b'))]),
-                make1(SyntaxKind::Match('c')),
-            ],
-        ));
-
-        assert_eq!(result, expect);
+            assert_eq!(run(src), expect);
+        }
     }
 
     #[test]
-    fn more_loop() {
-        let src = "ab+c".to_owned();
+    fn longest_plus() {
+        {
+            let src = "ab+c";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(SyntaxKind::LongestPlus, vec![make1(SyntaxKind::Match('b'))]),
+                    make1(SyntaxKind::Match('c')),
+                ],
+            ));
 
-        let mut parser = Parser::new(src);
-        let result = parser.parse();
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "ab+";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(SyntaxKind::LongestPlus, vec![make1(SyntaxKind::Match('b'))]),
+                ],
+            ));
 
-        let expect = Ok(make2(
-            SyntaxKind::Group,
-            vec![
-                make1(SyntaxKind::Match('a')),
-                make2(SyntaxKind::MoreLoop, vec![make1(SyntaxKind::Match('b'))]),
-                make1(SyntaxKind::Match('c')),
-            ],
-        ));
+            assert_eq!(run(src), expect);
+        }
+    }
 
-        assert_eq!(result, expect);
+    #[test]
+    fn shortest_star() {
+        {
+            let src = "ab*?c";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(
+                        SyntaxKind::ShortestStar,
+                        vec![make1(SyntaxKind::Match('b'))],
+                    ),
+                    make1(SyntaxKind::Match('c')),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "ab*?";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(
+                        SyntaxKind::ShortestStar,
+                        vec![make1(SyntaxKind::Match('b'))],
+                    ),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+    }
+
+    #[test]
+    fn shortest_plus() {
+        {
+            let src = "ab+?c";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(
+                        SyntaxKind::ShortestPlus,
+                        vec![make1(SyntaxKind::Match('b'))],
+                    ),
+                    make1(SyntaxKind::Match('c')),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "ab+?";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(
+                        SyntaxKind::ShortestPlus,
+                        vec![make1(SyntaxKind::Match('b'))],
+                    ),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
     }
 
     #[test]
     fn option() {
-        let src = "ab?c".to_owned();
+        {
+            let src = "ab?c";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(SyntaxKind::Option, vec![make1(SyntaxKind::Match('b'))]),
+                    make1(SyntaxKind::Match('c')),
+                ],
+            ));
 
-        let mut parser = Parser::new(src);
-        let result = parser.parse();
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "ab?";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(SyntaxKind::Option, vec![make1(SyntaxKind::Match('b'))]),
+                ],
+            ));
 
-        let expect = Ok(make2(
-            SyntaxKind::Group,
-            vec![
-                make1(SyntaxKind::Match('a')),
-                make2(SyntaxKind::Option, vec![make1(SyntaxKind::Match('b'))]),
-                make1(SyntaxKind::Match('c')),
-            ],
-        ));
-
-        assert_eq!(result, expect);
+            assert_eq!(run(src), expect);
+        }
     }
 
     #[test]
-    fn match_any() {
-        let src = "a.c".to_owned();
+    fn positive_set() {
+        {
+            let src = "a[b-z]d";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(
+                        SyntaxKind::PositiveSet,
+                        vec![make1(SyntaxKind::MatchRange('b', 'z'))],
+                    ),
+                    make1(SyntaxKind::Match('d')),
+                ],
+            ));
 
-        let mut parser = Parser::new(src);
-        let result = parser.parse();
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "[b-z]";
+            let expect = Ok(make2(
+                SyntaxKind::PositiveSet,
+                vec![make1(SyntaxKind::MatchRange('b', 'z'))],
+            ));
 
-        let expect = Ok(make2(
-            SyntaxKind::Group,
-            vec![
-                make1(SyntaxKind::Match('a')),
-                make1(SyntaxKind::MatchAny),
-                make1(SyntaxKind::Match('c')),
-            ],
-        ));
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "a[bc-yz]d";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(
+                        SyntaxKind::PositiveSet,
+                        vec![
+                            make1(SyntaxKind::Match('b')),
+                            make1(SyntaxKind::MatchRange('c', 'y')),
+                            make1(SyntaxKind::Match('z')),
+                        ],
+                    ),
+                    make1(SyntaxKind::Match('d')),
+                ],
+            ));
 
-        assert_eq!(result, expect);
+            assert_eq!(run(src), expect);
+        }
     }
 
     #[test]
-    fn match_group() {
-        let src = "a(bc)d".to_owned();
+    fn negative_set() {
+        {
+            let src = "a[^b-z]d";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(
+                        SyntaxKind::NegativeSet,
+                        vec![make1(SyntaxKind::MatchRange('b', 'z'))],
+                    ),
+                    make1(SyntaxKind::Match('d')),
+                ],
+            ));
 
-        let mut parser = Parser::new(src);
-        let result = parser.parse();
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "[^b-z]";
+            let expect = Ok(make2(
+                SyntaxKind::NegativeSet,
+                vec![make1(SyntaxKind::MatchRange('b', 'z'))],
+            ));
 
-        let expect = Ok(make2(
-            SyntaxKind::Group,
-            vec![
-                make1(SyntaxKind::Match('a')),
-                make2(
-                    SyntaxKind::Group,
-                    vec![make1(SyntaxKind::Match('b')), make1(SyntaxKind::Match('c'))],
-                ),
-                make1(SyntaxKind::Match('d')),
-            ],
-        ));
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "a[^bc-yz]d";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make2(
+                        SyntaxKind::NegativeSet,
+                        vec![
+                            make1(SyntaxKind::Match('b')),
+                            make1(SyntaxKind::MatchRange('c', 'y')),
+                            make1(SyntaxKind::Match('z')),
+                        ],
+                    ),
+                    make1(SyntaxKind::Match('d')),
+                ],
+            ));
 
-        assert_eq!(result, expect);
+            assert_eq!(run(src), expect);
+        }
     }
 
     #[test]
     fn pattern001() {
-        let src = "(https?|ftp):(exp.)?+".to_owned();
-
-        let mut parser = Parser::new(src);
-        let result = parser.parse();
-
+        let src = r"[a-zA-Z0-9_\.\+\-]+@[a-zA-Z0-9_\.]+[a-zA-Z]";
         let expect = Ok(make2(
             SyntaxKind::Group,
             vec![
                 make2(
-                    SyntaxKind::Select,
-                    vec![
-                        make2(
-                            SyntaxKind::Group,
-                            vec![
-                                make1(SyntaxKind::Match('h')),
-                                make1(SyntaxKind::Match('t')),
-                                make1(SyntaxKind::Match('t')),
-                                make1(SyntaxKind::Match('p')),
-                                make2(SyntaxKind::Option, vec![make1(SyntaxKind::Match('s'))]),
-                            ],
-                        ),
-                        make2(
-                            SyntaxKind::Group,
-                            vec![
-                                make1(SyntaxKind::Match('f')),
-                                make1(SyntaxKind::Match('t')),
-                                make1(SyntaxKind::Match('p')),
-                            ],
-                        ),
-                    ],
-                ),
-                make1(SyntaxKind::Match(':')),
-                make2(
-                    SyntaxKind::MoreLoop,
+                    SyntaxKind::LongestPlus,
                     vec![make2(
-                        SyntaxKind::Option,
-                        vec![make2(
-                            SyntaxKind::Group,
-                            vec![
-                                make1(SyntaxKind::Match('e')),
-                                make1(SyntaxKind::Match('x')),
-                                make1(SyntaxKind::Match('p')),
-                                make1(SyntaxKind::MatchAny),
-                            ],
-                        )],
+                        SyntaxKind::PositiveSet,
+                        vec![
+                            make1(SyntaxKind::MatchRange('a', 'z')),
+                            make1(SyntaxKind::MatchRange('A', 'Z')),
+                            make1(SyntaxKind::MatchRange('0', '9')),
+                            make1(SyntaxKind::Match('_')),
+                            make1(SyntaxKind::Match('.')),
+                            make1(SyntaxKind::Match('+')),
+                            make1(SyntaxKind::Match('-')),
+                        ],
                     )],
+                ),
+                make1(SyntaxKind::Match('@')),
+                make2(
+                    SyntaxKind::LongestPlus,
+                    vec![make2(
+                        SyntaxKind::PositiveSet,
+                        vec![
+                            make1(SyntaxKind::MatchRange('a', 'z')),
+                            make1(SyntaxKind::MatchRange('A', 'Z')),
+                            make1(SyntaxKind::MatchRange('0', '9')),
+                            make1(SyntaxKind::Match('_')),
+                            make1(SyntaxKind::Match('.')),
+                        ],
+                    )],
+                ),
+                make2(
+                    SyntaxKind::PositiveSet,
+                    vec![
+                        make1(SyntaxKind::MatchRange('a', 'z')),
+                        make1(SyntaxKind::MatchRange('A', 'Z')),
+                    ],
                 ),
             ],
         ));
 
-        assert_eq!(result, expect);
+        assert_eq!(run(src), expect);
     }
 }
