@@ -250,6 +250,10 @@ impl Parser {
                 }
 
                 if let (SyntaxKind::Match(a), SyntaxKind::Match(b)) = (node.kind, rhs.kind) {
+                    if a > b {
+                        return Err(format!("out of range order [{}-{}]", a, b));
+                    }
+
                     Ok(SyntaxNode {
                         kind: SyntaxKind::MatchRange(a, b),
                         children: vec![],
@@ -658,6 +662,19 @@ mod tests {
 
             assert_eq!(run(src), expect);
         }
+        {
+            let src = "[z-z]";
+            let expect = Ok(make2(
+                SyntaxKind::PositiveSet,
+                vec![make1(SyntaxKind::MatchRange('z', 'z'))],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "[z-b]";
+            assert_eq!(run(src).is_err(), true);
+        }
     }
 
     #[test]
@@ -706,6 +723,19 @@ mod tests {
             ));
 
             assert_eq!(run(src), expect);
+        }
+        {
+            let src = "[^z-z]";
+            let expect = Ok(make2(
+                SyntaxKind::NegativeSet,
+                vec![make1(SyntaxKind::MatchRange('z', 'z'))],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "[^z-b]";
+            assert_eq!(run(src).is_err(), true);
         }
     }
 
