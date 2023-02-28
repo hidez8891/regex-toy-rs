@@ -553,6 +553,19 @@ mod tests {
             assert_eq!(run(src), expect);
         }
         {
+            let src = "[bcd]";
+            let expect = Ok(make2(
+                SyntaxKind::PositiveSet,
+                vec![
+                    make1(SyntaxKind::Match('b')),
+                    make1(SyntaxKind::Match('c')),
+                    make1(SyntaxKind::Match('d')),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
             let src = "a[bc-yz]d";
             let expect = Ok(make2(
                 SyntaxKind::Group,
@@ -615,6 +628,19 @@ mod tests {
             assert_eq!(run(src), expect);
         }
         {
+            let src = "[^bcd]";
+            let expect = Ok(make2(
+                SyntaxKind::NegativeSet,
+                vec![
+                    make1(SyntaxKind::Match('b')),
+                    make1(SyntaxKind::Match('c')),
+                    make1(SyntaxKind::Match('d')),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
             let src = "a[^bc-yz]d";
             let expect = Ok(make2(
                 SyntaxKind::Group,
@@ -651,7 +677,7 @@ mod tests {
 
     #[test]
     fn pattern001() {
-        let src = r"[a-zA-Z0-9_\.\+\-]+@[a-zA-Z0-9_\.]+[a-zA-Z]";
+        let src = r"[a-zA-Z0-9_\.\+\-]+@[a-zA-Z0-9_\.]+[a-zA-Z]+";
         let expect = Ok(make2(
             SyntaxKind::Group,
             vec![
@@ -685,11 +711,14 @@ mod tests {
                     )],
                 ),
                 make2(
-                    SyntaxKind::PositiveSet,
-                    vec![
-                        make1(SyntaxKind::MatchRange('a', 'z')),
-                        make1(SyntaxKind::MatchRange('A', 'Z')),
-                    ],
+                    SyntaxKind::ManyPlus,
+                    vec![make2(
+                        SyntaxKind::PositiveSet,
+                        vec![
+                            make1(SyntaxKind::MatchRange('a', 'z')),
+                            make1(SyntaxKind::MatchRange('A', 'Z')),
+                        ],
+                    )],
                 ),
             ],
         ));
