@@ -11,10 +11,8 @@ const META_CHARS: [char; 11] = ['(', ')', '|', '*', '+', '?', '.', '[', ']', '^'
 pub enum SyntaxKind {
     Group,                  // '(' abc ')'
     Union,                  // abc '|' abc
-    LongestStar,            // a '*'
-    LongestPlus,            // a '+'
-    ShortestStar,           // a '*?'
-    ShortestPlus,           // a '+?'
+    ManyStar,               // a '*'
+    ManyPlus,               // a '+'
     Option,                 // a '?'
     MatchAny,               // '.'
     Match(char),            // a
@@ -121,33 +119,15 @@ impl Parser {
         match self.stream.peek() {
             Some('*') => {
                 self.stream.next();
-
-                let kind = match self.stream.peek() {
-                    Some('?') => {
-                        self.stream.next();
-                        SyntaxKind::ShortestStar
-                    }
-                    _ => SyntaxKind::LongestStar,
-                };
-
                 Ok(SyntaxNode {
-                    kind,
+                    kind: SyntaxKind::ManyStar,
                     children: vec![node],
                 })
             }
             Some('+') => {
                 self.stream.next();
-
-                let kind = match self.stream.peek() {
-                    Some('?') => {
-                        self.stream.next();
-                        SyntaxKind::ShortestPlus
-                    }
-                    _ => SyntaxKind::LongestPlus,
-                };
-
                 Ok(SyntaxNode {
-                    kind,
+                    kind: SyntaxKind::ManyPlus,
                     children: vec![node],
                 })
             }
@@ -459,14 +439,14 @@ mod tests {
     }
 
     #[test]
-    fn longest_star() {
+    fn many_star() {
         {
             let src = "ab*c";
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
                     make1(SyntaxKind::Match('a')),
-                    make2(SyntaxKind::LongestStar, vec![make1(SyntaxKind::Match('b'))]),
+                    make2(SyntaxKind::ManyStar, vec![make1(SyntaxKind::Match('b'))]),
                     make1(SyntaxKind::Match('c')),
                 ],
             ));
@@ -479,7 +459,7 @@ mod tests {
                 SyntaxKind::Group,
                 vec![
                     make1(SyntaxKind::Match('a')),
-                    make2(SyntaxKind::LongestStar, vec![make1(SyntaxKind::Match('b'))]),
+                    make2(SyntaxKind::ManyStar, vec![make1(SyntaxKind::Match('b'))]),
                 ],
             ));
 
@@ -488,14 +468,14 @@ mod tests {
     }
 
     #[test]
-    fn longest_plus() {
+    fn many_plus() {
         {
             let src = "ab+c";
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
                     make1(SyntaxKind::Match('a')),
-                    make2(SyntaxKind::LongestPlus, vec![make1(SyntaxKind::Match('b'))]),
+                    make2(SyntaxKind::ManyPlus, vec![make1(SyntaxKind::Match('b'))]),
                     make1(SyntaxKind::Match('c')),
                 ],
             ));
@@ -508,77 +488,7 @@ mod tests {
                 SyntaxKind::Group,
                 vec![
                     make1(SyntaxKind::Match('a')),
-                    make2(SyntaxKind::LongestPlus, vec![make1(SyntaxKind::Match('b'))]),
-                ],
-            ));
-
-            assert_eq!(run(src), expect);
-        }
-    }
-
-    #[test]
-    fn shortest_star() {
-        {
-            let src = "ab*?c";
-            let expect = Ok(make2(
-                SyntaxKind::Group,
-                vec![
-                    make1(SyntaxKind::Match('a')),
-                    make2(
-                        SyntaxKind::ShortestStar,
-                        vec![make1(SyntaxKind::Match('b'))],
-                    ),
-                    make1(SyntaxKind::Match('c')),
-                ],
-            ));
-
-            assert_eq!(run(src), expect);
-        }
-        {
-            let src = "ab*?";
-            let expect = Ok(make2(
-                SyntaxKind::Group,
-                vec![
-                    make1(SyntaxKind::Match('a')),
-                    make2(
-                        SyntaxKind::ShortestStar,
-                        vec![make1(SyntaxKind::Match('b'))],
-                    ),
-                ],
-            ));
-
-            assert_eq!(run(src), expect);
-        }
-    }
-
-    #[test]
-    fn shortest_plus() {
-        {
-            let src = "ab+?c";
-            let expect = Ok(make2(
-                SyntaxKind::Group,
-                vec![
-                    make1(SyntaxKind::Match('a')),
-                    make2(
-                        SyntaxKind::ShortestPlus,
-                        vec![make1(SyntaxKind::Match('b'))],
-                    ),
-                    make1(SyntaxKind::Match('c')),
-                ],
-            ));
-
-            assert_eq!(run(src), expect);
-        }
-        {
-            let src = "ab+?";
-            let expect = Ok(make2(
-                SyntaxKind::Group,
-                vec![
-                    make1(SyntaxKind::Match('a')),
-                    make2(
-                        SyntaxKind::ShortestPlus,
-                        vec![make1(SyntaxKind::Match('b'))],
-                    ),
+                    make2(SyntaxKind::ManyPlus, vec![make1(SyntaxKind::Match('b'))]),
                 ],
             ));
 
@@ -746,7 +656,7 @@ mod tests {
             SyntaxKind::Group,
             vec![
                 make2(
-                    SyntaxKind::LongestPlus,
+                    SyntaxKind::ManyPlus,
                     vec![make2(
                         SyntaxKind::PositiveSet,
                         vec![
@@ -762,7 +672,7 @@ mod tests {
                 ),
                 make1(SyntaxKind::Match('@')),
                 make2(
-                    SyntaxKind::LongestPlus,
+                    SyntaxKind::ManyPlus,
                     vec![make2(
                         SyntaxKind::PositiveSet,
                         vec![
