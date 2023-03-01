@@ -5,7 +5,7 @@ use std::vec::IntoIter;
 // https://stackoverflow.com/questions/265457/regex-bnf-grammar
 // https://www2.cs.sfu.ca/~cameron/Teaching/384/99-3/regexp-plg.html
 
-const META_CHARS: [char; 11] = ['(', ')', '|', '*', '+', '?', '.', '[', ']', '^', '-'];
+const META_CHARS: [char; 12] = ['(', ')', '|', '*', '+', '?', '.', '[', ']', '^', '-', '$'];
 
 #[derive(Debug, PartialEq)]
 pub enum SyntaxKind {
@@ -19,6 +19,8 @@ pub enum SyntaxKind {
     PositiveSet,            // '[' a b c ']
     NegativeSet,            // '[^' a b c ']
     MatchRange(char, char), // a '-' z
+    MatchSOL,               // ^
+    MatchEOL,               // $
     None,
 }
 
@@ -148,6 +150,8 @@ impl Parser {
             Some('(') => self.parse_group(),
             Some('[') => self.parse_set(),
             Some('.') => self.parse_anychar(),
+            Some('^') => self.parse_sol(),
+            Some('$') => self.parse_eol(),
             _ => self.parse_char(),
         }
     }
@@ -251,6 +255,24 @@ impl Parser {
 
         Ok(SyntaxNode {
             kind: SyntaxKind::MatchAny,
+            children: vec![],
+        })
+    }
+
+    fn parse_sol(&mut self) -> Result<SyntaxNode, String> {
+        self.stream.next(); // consume '^'
+
+        Ok(SyntaxNode {
+            kind: SyntaxKind::MatchSOL,
+            children: vec![],
+        })
+    }
+
+    fn parse_eol(&mut self) -> Result<SyntaxNode, String> {
+        self.stream.next(); // consume '$'
+
+        Ok(SyntaxNode {
+            kind: SyntaxKind::MatchEOL,
             children: vec![],
         })
     }
@@ -365,6 +387,36 @@ mod tests {
 
             assert_eq!(run(src), expect);
         }
+    }
+
+    #[test]
+    fn match_sol() {
+        let src = "^ab";
+        let expect = Ok(make2(
+            SyntaxKind::Group,
+            vec![
+                make1(SyntaxKind::MatchSOL),
+                make1(SyntaxKind::Match('a')),
+                make1(SyntaxKind::Match('b')),
+            ],
+        ));
+
+        assert_eq!(run(src), expect);
+    }
+
+    #[test]
+    fn match_eol() {
+        let src = "ab$";
+        let expect = Ok(make2(
+            SyntaxKind::Group,
+            vec![
+                make1(SyntaxKind::Match('a')),
+                make1(SyntaxKind::Match('b')),
+                make1(SyntaxKind::MatchEOL),
+            ],
+        ));
+
+        assert_eq!(run(src), expect);
     }
 
     #[test]
