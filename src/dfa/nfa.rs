@@ -18,6 +18,8 @@ enum NfaAction {
     Asap,
     Match(char),
     MatchAny,
+    MatchSOL,
+    MatchEOL,
     MatchSet(Vec<NfaMatchAction>),
     UnmatchSet(Vec<NfaMatchAction>),
 }
@@ -67,6 +69,8 @@ impl Generator {
             SyntaxKind::ManyPlus => self.make_many_plus(syntax, dst_id),
             SyntaxKind::Option => self.make_option(syntax, dst_id),
             SyntaxKind::MatchAny => self.make_match_any(dst_id),
+            SyntaxKind::MatchSOL => self.make_match_sol(dst_id),
+            SyntaxKind::MatchEOL => self.make_match_eol(dst_id),
             SyntaxKind::Match(c) => self.make_match_char(c, dst_id),
             SyntaxKind::PositiveSet => self.make_positive_set(syntax, dst_id),
             SyntaxKind::NegativeSet => self.make_negative_set(syntax, dst_id),
@@ -145,6 +149,28 @@ impl Generator {
         self.nodes.push(NfaNode {
             nexts: vec![NfaEdge {
                 action: NfaAction::MatchAny,
+                next_id: dst_id,
+            }],
+        });
+        node_id
+    }
+
+    fn make_match_sol(&mut self, dst_id: usize) -> usize {
+        let node_id = self.nodes.len();
+        self.nodes.push(NfaNode {
+            nexts: vec![NfaEdge {
+                action: NfaAction::MatchSOL,
+                next_id: dst_id,
+            }],
+        });
+        node_id
+    }
+
+    fn make_match_eol(&mut self, dst_id: usize) -> usize {
+        let node_id = self.nodes.len();
+        self.nodes.push(NfaNode {
+            nexts: vec![NfaEdge {
+                action: NfaAction::MatchEOL,
                 next_id: dst_id,
             }],
         });
@@ -256,6 +282,16 @@ impl<'a> Matcher<'a> {
                         .and_then(|_|
                             self.is_match_impl(index + 1, edge.next_id),
                         ),
+                NfaAction::MatchSOL =>
+                    Some(index).filter(|p| *p == 0)
+                        .and_then(|_|
+                            self.is_match_impl(index, edge.next_id)
+                        ),
+                NfaAction::MatchEOL =>
+                    Some(index).filter(|p| *p == self.str.len())
+                        .and_then(|_|
+                            self.is_match_impl(index, edge.next_id)
+                        ),
                 NfaAction::MatchSet(set) =>
                     self.str.chars().nth(index)
                         .filter(|c|
@@ -345,6 +381,30 @@ mod tests {
             assert_eq!(Matcher::is_match(&nfa, "a"), None);
             assert_eq!(Matcher::is_match(&nfa, "abz"), Some("ab".to_owned()));
             assert_eq!(Matcher::is_match(&nfa, "zab"), Some("ab".to_owned()));
+        }
+    }
+
+    #[test]
+    fn match_sol() {
+        {
+            let src = "^abc";
+            let nfa = run(src);
+
+            assert_eq!(Matcher::is_match(&nfa, "abc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "zabc"), None);
+            assert_eq!(Matcher::is_match(&nfa, "abcz"), Some("abc".to_owned()));
+        }
+    }
+
+    #[test]
+    fn match_eol() {
+        {
+            let src = "abc$";
+            let nfa = run(src);
+
+            assert_eq!(Matcher::is_match(&nfa, "abc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "zabc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abcz"), None);
         }
     }
 
@@ -613,28 +673,57 @@ mod tests {
 
     #[test]
     fn pattern001() {
-        let src = r"[a-zA-Z0-9_\.\+\-]+@[a-zA-Z0-9_\.]+[a-zA-Z]+";
-        let nfa = run(src);
+        {
+            let src = r"[a-zA-Z0-9_\.\+\-]+@[a-zA-Z0-9_\.]+[a-zA-Z]+";
+            let nfa = run(src);
 
-        assert_eq!(
-            Matcher::is_match(&nfa, "abc@example.com"),
-            Some("abc@example.com".to_owned())
-        );
-        assert_eq!(
-            Matcher::is_match(&nfa, "abc+123@me.example.com"),
-            Some("abc+123@me.example.com".to_owned())
-        );
-        assert_eq!(
-            Matcher::is_match(&nfa, "abc@example"),
-            Some("abc@example".to_owned())
-        );
-        assert_eq!(
-            Matcher::is_match(&nfa, "abc@example.123"),
-            Some("abc@example".to_owned())
-        );
-        assert_eq!(
-            Matcher::is_match(&nfa, "abc@def@example.com"),
-            Some("abc@def".to_owned())
-        );
+            assert_eq!(
+                Matcher::is_match(&nfa, "abc@example.com"),
+                Some("abc@example.com".to_owned())
+            );
+            assert_eq!(
+                Matcher::is_match(&nfa, "abc+123@me.example.com"),
+                Some("abc+123@me.example.com".to_owned())
+            );
+            assert_eq!(
+                Matcher::is_match(&nfa, "abc@example"),
+                Some("abc@example".to_owned())
+            );
+            assert_eq!(
+                Matcher::is_match(&nfa, "abc@example.123"),
+                Some("abc@example".to_owned())
+            );
+            assert_eq!(
+                Matcher::is_match(&nfa, "abc@def@example.com"),
+                Some("abc@def".to_owned())
+            );
+        }
+        {
+            let src = r"^[a-zA-Z0-9_\.\+\-]+@[a-zA-Z0-9_\.]+[a-zA-Z]+$";
+            let nfa = run(src);
+
+            assert_eq!(
+                Matcher::is_match(&nfa, "abc@example.com"),
+                Some("abc@example.com".to_owned())
+            );
+            assert_eq!(
+                Matcher::is_match(&nfa, "abc+123@me.example.com"),
+                Some("abc+123@me.example.com".to_owned())
+            );
+            assert_eq!(
+                Matcher::is_match(&nfa, "abc@example"),
+                Some("abc@example".to_owned())
+            );
+            #[rustfmt::skip]
+            assert_eq!(
+                Matcher::is_match(&nfa, "abc@example.123"),
+                None,
+            );
+            #[rustfmt::skip]
+            assert_eq!(
+                Matcher::is_match(&nfa, "abc@def@example.com"),
+                None,
+            );
+        }
     }
 }
