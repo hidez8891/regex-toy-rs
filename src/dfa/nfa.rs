@@ -177,53 +177,45 @@ impl Nfa {
 
     fn make_many_star(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let loop_id = self.nodes.len();
-        self.nodes.push(NfaNode {
-            nexts: vec![NfaEdge {
-                action: NfaAction::Asap,
-                next_id: dst_id,
-            }],
-        });
+        self.nodes.push(NfaNode { nexts: vec![] });
 
         let match_id = self.make_root(&syntax.children[0], loop_id);
         self.nodes[loop_id].nexts.push(NfaEdge {
             action: NfaAction::Asap,
             next_id: match_id,
+        });
+
+        self.nodes[loop_id].nexts.push(NfaEdge {
+            action: NfaAction::Asap,
+            next_id: dst_id,
         });
         loop_id
     }
 
     fn make_many_plus(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let loop_id = self.nodes.len();
-        self.nodes.push(NfaNode {
-            nexts: vec![NfaEdge {
-                action: NfaAction::Asap,
-                next_id: dst_id,
-            }],
-        });
+        self.nodes.push(NfaNode { nexts: vec![] });
 
         let match_id = self.make_root(&syntax.children[0], loop_id);
         self.nodes[loop_id].nexts.push(NfaEdge {
             action: NfaAction::Asap,
             next_id: match_id,
         });
+
+        self.nodes[loop_id].nexts.push(NfaEdge {
+            action: NfaAction::Asap,
+            next_id: dst_id,
+        });
         match_id
     }
 
     fn make_option(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
-        let node_id = self.nodes.len();
-        self.nodes.push(NfaNode {
-            nexts: vec![NfaEdge {
-                action: NfaAction::Asap,
-                next_id: dst_id,
-            }],
-        });
-
         let match_id = self.make_root(&syntax.children[0], dst_id);
-        self.nodes[node_id].nexts.push(NfaEdge {
+        self.nodes[match_id].nexts.push(NfaEdge {
             action: NfaAction::Asap,
-            next_id: match_id,
+            next_id: dst_id,
         });
-        node_id
+        match_id
     }
 
     fn make_match_any(&mut self, dst_id: usize) -> usize {
