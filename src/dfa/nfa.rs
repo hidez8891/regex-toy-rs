@@ -1,20 +1,20 @@
 use crate::parser::{SyntaxKind, SyntaxNode};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::BTreeSet;
 
 pub struct Nfa {
-    pub nodes: Vec<NfaNode>,
+    nodes: Vec<NfaNode>,
 }
 
-pub struct NfaNode {
-    pub nexts: Vec<NfaEdge>,
+struct NfaNode {
+    nexts: Vec<NfaEdge>,
 }
 
-pub struct NfaEdge {
-    pub action: NfaAction,
-    pub next_id: usize,
+struct NfaEdge {
+    action: NfaAction,
+    next_id: usize,
 }
 
-pub enum NfaAction {
+enum NfaAction {
     Asap,
     Match(char),
     MatchAny,
@@ -23,106 +23,28 @@ pub enum NfaAction {
 }
 
 #[derive(PartialEq, PartialOrd, Eq, Ord)]
-pub enum NfaMatchAction {
+enum NfaMatchAction {
     Char(char),
     Range(char, char),
 }
 
-impl Nfa {
+pub struct Generator {
+    nodes: Vec<NfaNode>,
+}
+
+impl Generator {
     pub fn new(syntax: &SyntaxNode) -> Nfa {
-        let mut nfa = Nfa {
+        let mut generator = Generator {
             nodes: vec![
                 NfaNode { nexts: vec![] }, // root
                 NfaNode { nexts: vec![] }, // submit
             ],
         };
-        nfa.make(syntax);
+        generator.make(syntax);
 
-        nfa
-    }
-
-    pub fn is_match(&self, str: String) -> bool {
-        let mut current = BTreeSet::new();
-        current.insert(0);
-        current = self.solve_asap(current);
-
-        for c in str.chars() {
-            if current.is_empty() {
-                return false;
-            }
-            current = self.solve_match_char(c, current);
-            current = self.solve_asap(current);
+        Nfa {
+            nodes: generator.nodes,
         }
-
-        current.contains(&1)
-    }
-
-    fn solve_match_char(&self, c: char, current_ids: BTreeSet<usize>) -> BTreeSet<usize> {
-        let mut next_ids = BTreeSet::new();
-        for id in current_ids {
-            for edge in &self.nodes[id].nexts {
-                match &edge.action {
-                    NfaAction::Match(t) => {
-                        if *t == c {
-                            next_ids.insert(edge.next_id);
-                        }
-                    }
-                    NfaAction::MatchAny => {
-                        next_ids.insert(edge.next_id);
-                    }
-                    NfaAction::MatchSet(set) => {
-                        if set.iter().any(|m| match m {
-                            NfaMatchAction::Char(t) => *t == c,
-                            NfaMatchAction::Range(a, b) => *a <= c && c <= *b,
-                        }) {
-                            next_ids.insert(edge.next_id);
-                        }
-                    }
-                    NfaAction::UnmatchSet(set) => {
-                        if set.iter().all(|m| match m {
-                            NfaMatchAction::Char(t) => *t != c,
-                            NfaMatchAction::Range(a, b) => c < *a || *b < c,
-                        }) {
-                            next_ids.insert(edge.next_id);
-                        }
-                    }
-                    _ => {
-                        // nothing todo
-                    }
-                }
-            }
-        }
-        next_ids
-    }
-
-    fn solve_asap(&self, current_ids: BTreeSet<usize>) -> BTreeSet<usize> {
-        let mut next_ids = BTreeSet::new();
-        let mut queue_ids = VecDeque::from_iter(current_ids.iter());
-        let mut finished = BTreeSet::new();
-        while let Some(id) = queue_ids.pop_front() {
-            if finished.contains(id) {
-                continue;
-            }
-            finished.insert(*id);
-
-            // submit node (id=1).
-            if *id == 1 {
-                next_ids.insert(*id);
-                continue;
-            }
-
-            for edge in &self.nodes[*id].nexts {
-                match edge.action {
-                    NfaAction::Asap => {
-                        queue_ids.push_back(&edge.next_id);
-                    }
-                    _ => {
-                        next_ids.insert(*id);
-                    }
-                }
-            }
-        }
-        next_ids
     }
 
     /// `make` recursively parses the `syntax` and constructs the NFA.
@@ -287,6 +209,86 @@ impl Nfa {
     }
 }
 
+pub struct Matcher<'a> {
+    nfa: &'a Nfa,
+    str: String,
+    start_index: usize,
+}
+
+impl<'a> Matcher<'a> {
+    pub fn is_match(nfa: &'a Nfa, str: &str) -> Option<String> {
+        let mut matcher = Matcher {
+            nfa,
+            str: str.to_owned(),
+            start_index: 0,
+        };
+
+        for i in 0..str.len() {
+            matcher.start_index = i;
+
+            let result = matcher.is_match_impl(i, 0);
+            if result.is_some() {
+                return result;
+            }
+        }
+        None
+    }
+
+    fn is_match_impl(&self, index: usize, node_id: usize) -> Option<String> {
+        if node_id == 1 {
+            return Some(self.str[self.start_index..index].to_string());
+        }
+
+        let node = &self.nfa.nodes[node_id];
+        for edge in node.nexts.iter() {
+            #[rustfmt::skip]
+            let result = match &edge.action {
+                NfaAction::Asap =>
+                    self.is_match_impl(index, edge.next_id),
+                NfaAction::Match(t) =>
+                    self.str.chars().nth(index)
+                        .filter(|c| *c == *t)
+                        .and_then(|_|
+                            self.is_match_impl(index + 1, edge.next_id)
+                        ),
+                NfaAction::MatchAny =>
+                    self.str.chars().nth(index)
+                        .and_then(|_|
+                            self.is_match_impl(index + 1, edge.next_id),
+                        ),
+                NfaAction::MatchSet(set) =>
+                    self.str.chars().nth(index)
+                        .filter(|c|
+                            set.iter().any(|m| match m {
+                                NfaMatchAction::Char(t) => *t == *c,
+                                NfaMatchAction::Range(a, b) => *a <= *c && *c <= *b,
+                            })
+                        )
+                        .and_then(|_|
+                            self.is_match_impl(index + 1, edge.next_id)
+                        ),
+                NfaAction::UnmatchSet(set) =>
+                    self.str.chars().nth(index)
+                        .filter(|c|
+                            set.iter().all(|m| match m {
+                                NfaMatchAction::Char(t) => *t != *c,
+                                NfaMatchAction::Range(a, b) => *c < *a || *b < *c,
+                            })
+                        )
+                        .and_then(|_|
+                            self.is_match_impl(index + 1, edge.next_id)
+                        ),
+            };
+
+            if result.is_some() {
+                return result;
+            }
+        }
+
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,47 +297,54 @@ mod tests {
     fn run(pattern: &str) -> Nfa {
         let mut parser = Parser::new(pattern.to_owned());
         let result = parser.parse();
-        Nfa::new(&result.unwrap())
+        Generator::new(&result.unwrap())
     }
 
     #[test]
     fn match_char() {
         let src = "abc";
-        let matcher = run(src);
+        let nfa = run(src);
 
-        assert_eq!(matcher.is_match("abc".to_owned()), true);
-        assert_eq!(matcher.is_match("abcd".to_owned()), false);
-        assert_eq!(matcher.is_match("ab".to_owned()), false);
+        assert_eq!(Matcher::is_match(&nfa, "abc"), Some("abc".to_owned()));
+        assert_eq!(Matcher::is_match(&nfa, "ab"), None);
+        assert_eq!(Matcher::is_match(&nfa, "abcd"), Some("abc".to_owned()));
+        assert_eq!(Matcher::is_match(&nfa, "zabc"), Some("abc".to_owned()));
     }
 
     #[test]
     fn match_metachar() {
         let src = r"a\+c";
-        let matcher = run(src);
+        let nfa = run(src);
 
-        assert_eq!(matcher.is_match("a+c".to_owned()), true);
-        assert_eq!(matcher.is_match("aac".to_owned()), false);
-        assert_eq!(matcher.is_match("ac".to_owned()), false);
+        assert_eq!(Matcher::is_match(&nfa, "a+c"), Some("a+c".to_owned()));
+        assert_eq!(Matcher::is_match(&nfa, "aac"), None);
+        assert_eq!(Matcher::is_match(&nfa, "ac"), None);
+        assert_eq!(Matcher::is_match(&nfa, "a+cz"), Some("a+c".to_owned()));
+        assert_eq!(Matcher::is_match(&nfa, "za+c"), Some("a+c".to_owned()));
     }
 
     #[test]
     fn match_any() {
         {
             let src = "a.c";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("abc".to_owned()), true);
-            assert_eq!(matcher.is_match("adc".to_owned()), true);
-            assert_eq!(matcher.is_match("ac".to_owned()), false);
-            assert_eq!(matcher.is_match("abbc".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "abc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "adc"), Some("adc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ac"), None);
+            assert_eq!(Matcher::is_match(&nfa, "abbc"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zabc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abcz"), Some("abc".to_owned()));
         }
         {
             let src = "a.";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("ab".to_owned()), true);
-            assert_eq!(matcher.is_match("ac".to_owned()), true);
-            assert_eq!(matcher.is_match("a".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "ab"), Some("ab".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ad"), Some("ad".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "a"), None);
+            assert_eq!(Matcher::is_match(&nfa, "abz"), Some("ab".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "zab"), Some("ab".to_owned()));
         }
     }
 
@@ -343,55 +352,76 @@ mod tests {
     fn group() {
         {
             let src = "a(bc)d";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("abcd".to_owned()), true);
-            assert_eq!(matcher.is_match("abc".to_owned()), false);
-            assert_eq!(matcher.is_match("ad".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "abcd"), Some("abcd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abc"), None);
+            assert_eq!(Matcher::is_match(&nfa, "ad"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zabcd"), Some("abcd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abcdz"), Some("abcd".to_owned()));
         }
         {
             let src = "a(bc)";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("abc".to_owned()), true);
-            assert_eq!(matcher.is_match("ab".to_owned()), false);
-            assert_eq!(matcher.is_match("a".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "abc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "a"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zabc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abcd"), Some("abc".to_owned()));
         }
     }
 
     #[test]
     fn union() {
         let src = "abc|def|ghi";
-        let matcher = run(src);
+        let nfa = run(src);
 
-        assert_eq!(matcher.is_match("abc".to_owned()), true);
-        assert_eq!(matcher.is_match("def".to_owned()), true);
-        assert_eq!(matcher.is_match("ghi".to_owned()), true);
-        assert_eq!(matcher.is_match("ab".to_owned()), false);
-        assert_eq!(matcher.is_match("hi".to_owned()), false);
+        assert_eq!(Matcher::is_match(&nfa, "abc"), Some("abc".to_owned()));
+        assert_eq!(Matcher::is_match(&nfa, "def"), Some("def".to_owned()));
+        assert_eq!(Matcher::is_match(&nfa, "ghi"), Some("ghi".to_owned()));
+        assert_eq!(Matcher::is_match(&nfa, "adg"), None);
+        assert_eq!(Matcher::is_match(&nfa, "ab"), None);
+        assert_eq!(Matcher::is_match(&nfa, "zabc"), Some("abc".to_owned()));
+        assert_eq!(Matcher::is_match(&nfa, "defz"), Some("def".to_owned()));
     }
 
     #[test]
     fn many_star() {
         {
             let src = "ab*c";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("ac".to_owned()), true);
-            assert_eq!(matcher.is_match("abc".to_owned()), true);
-            assert_eq!(matcher.is_match("abbc".to_owned()), true);
-            assert_eq!(matcher.is_match("abbbc".to_owned()), true);
-            assert_eq!(matcher.is_match("ab".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "ac"), Some("ac".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abbc"), Some("abbc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abbbc"), Some("abbbc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "az"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zac"), Some("ac".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "acz"), Some("ac".to_owned()));
         }
         {
             let src = "ab*";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("a".to_owned()), true);
-            assert_eq!(matcher.is_match("ab".to_owned()), true);
-            assert_eq!(matcher.is_match("abb".to_owned()), true);
-            assert_eq!(matcher.is_match("abbb".to_owned()), true);
-            assert_eq!(matcher.is_match("b".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "a"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ab"), Some("ab".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abb"), Some("abb".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abbb"), Some("abbb".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "b"), None);
+            assert_eq!(Matcher::is_match(&nfa, "za"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "az"), Some("a".to_owned()));
+        }
+        {
+            let src = "ab*b*";
+            let nfa = run(src);
+
+            assert_eq!(Matcher::is_match(&nfa, "a"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ab"), Some("ab".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abb"), Some("abb".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abbb"), Some("abbb".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "b"), None);
+            assert_eq!(Matcher::is_match(&nfa, "za"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "az"), Some("a".to_owned()));
         }
     }
 
@@ -399,23 +429,37 @@ mod tests {
     fn many_plus() {
         {
             let src = "ab+c";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("abc".to_owned()), true);
-            assert_eq!(matcher.is_match("abbc".to_owned()), true);
-            assert_eq!(matcher.is_match("abbbc".to_owned()), true);
-            assert_eq!(matcher.is_match("ac".to_owned()), false);
-            assert_eq!(matcher.is_match("ab".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "abc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abbc"), Some("abbc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abbbc"), Some("abbbc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ac"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zabc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abcz"), Some("abc".to_owned()));
         }
         {
             let src = "ab+";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("ab".to_owned()), true);
-            assert_eq!(matcher.is_match("abb".to_owned()), true);
-            assert_eq!(matcher.is_match("abbb".to_owned()), true);
-            assert_eq!(matcher.is_match("a".to_owned()), false);
-            assert_eq!(matcher.is_match("b".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "ab"), Some("ab".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abb"), Some("abb".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abbb"), Some("abbb".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "a"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zab"), Some("ab".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abz"), Some("ab".to_owned()));
+        }
+        {
+            let src = "ab+b+";
+            let nfa = run(src);
+
+            assert_eq!(Matcher::is_match(&nfa, "abb"), Some("abb".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abbb"), Some("abbb".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abbbb"), Some("abbbb".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "a"), None);
+            assert_eq!(Matcher::is_match(&nfa, "ab"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zabb"), Some("abb".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abbz"), Some("abb".to_owned()));
         }
     }
 
@@ -423,19 +467,23 @@ mod tests {
     fn option() {
         {
             let src = "ab?c";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("abc".to_owned()), true);
-            assert_eq!(matcher.is_match("ac".to_owned()), true);
-            assert_eq!(matcher.is_match("a".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "ac"), Some("ac".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abc"), Some("abc".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "a"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zac"), Some("ac".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "acz"), Some("ac".to_owned()));
         }
         {
             let src = "ab?";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("ab".to_owned()), true);
-            assert_eq!(matcher.is_match("a".to_owned()), true);
-            assert_eq!(matcher.is_match("b".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "a"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ab"), Some("ab".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "b"), None);
+            assert_eq!(Matcher::is_match(&nfa, "za"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "az"), Some("a".to_owned()));
         }
     }
 
@@ -443,51 +491,61 @@ mod tests {
     fn positive_set() {
         {
             let src = "a[b-z]d";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("abd".to_owned()), true);
-            assert_eq!(matcher.is_match("azd".to_owned()), true);
-            assert_eq!(matcher.is_match("axd".to_owned()), true);
-            assert_eq!(matcher.is_match("ad".to_owned()), false);
-            assert_eq!(matcher.is_match("aad".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "abd"), Some("abd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "azd"), Some("azd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "axd"), Some("axd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ad"), None);
+            assert_eq!(Matcher::is_match(&nfa, "aad"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zabd"), Some("abd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abdz"), Some("abd".to_owned()));
         }
         {
             let src = "[b-z]";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("b".to_owned()), true);
-            assert_eq!(matcher.is_match("z".to_owned()), true);
-            assert_eq!(matcher.is_match("x".to_owned()), true);
-            assert_eq!(matcher.is_match("a".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "b"), Some("b".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "z"), Some("z".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "x"), Some("x".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "a"), None);
+            assert_eq!(Matcher::is_match(&nfa, "ab"), Some("b".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "bz"), Some("b".to_owned()));
         }
         {
             let src = "[bcd]";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("b".to_owned()), true);
-            assert_eq!(matcher.is_match("c".to_owned()), true);
-            assert_eq!(matcher.is_match("d".to_owned()), true);
-            assert_eq!(matcher.is_match("a".to_owned()), false);
-            assert_eq!(matcher.is_match("e".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "b"), Some("b".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "c"), Some("c".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "d"), Some("d".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "a"), None);
+            assert_eq!(Matcher::is_match(&nfa, "e"), None);
+            assert_eq!(Matcher::is_match(&nfa, "ab"), Some("b".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "bz"), Some("b".to_owned()));
         }
         {
             let src = "a[bc-yz]d";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("abd".to_owned()), true);
-            assert_eq!(matcher.is_match("azd".to_owned()), true);
-            assert_eq!(matcher.is_match("acd".to_owned()), true);
-            assert_eq!(matcher.is_match("ayd".to_owned()), true);
-            assert_eq!(matcher.is_match("axd".to_owned()), true);
-            assert_eq!(matcher.is_match("ad".to_owned()), false);
-            assert_eq!(matcher.is_match("aad".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "abd"), Some("abd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "azd"), Some("azd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "acd"), Some("acd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ayd"), Some("ayd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "axd"), Some("axd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "aad"), None);
+            assert_eq!(Matcher::is_match(&nfa, "ad"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zabd"), Some("abd".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "abdz"), Some("abd".to_owned()));
         }
         {
             let src = "[z-z]";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("z".to_owned()), true);
-            assert_eq!(matcher.is_match("a".to_owned()), false);
+            assert_eq!(Matcher::is_match(&nfa, "z"), Some("z".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "a"), None);
+            assert_eq!(Matcher::is_match(&nfa, "az"), Some("z".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "za"), Some("z".to_owned()));
         }
     }
 
@@ -495,63 +553,88 @@ mod tests {
     fn negative_set() {
         {
             let src = "a[^b-z]d";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("abd".to_owned()), false);
-            assert_eq!(matcher.is_match("azd".to_owned()), false);
-            assert_eq!(matcher.is_match("axd".to_owned()), false);
-            assert_eq!(matcher.is_match("ad".to_owned()), false);
-            assert_eq!(matcher.is_match("aad".to_owned()), true);
+            assert_eq!(Matcher::is_match(&nfa, "abd"), None);
+            assert_eq!(Matcher::is_match(&nfa, "azd"), None);
+            assert_eq!(Matcher::is_match(&nfa, "axd"), None);
+            assert_eq!(Matcher::is_match(&nfa, "aad"), Some("aad".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ad"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zaad"), Some("aad".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "aadz"), Some("aad".to_owned()));
         }
         {
             let src = "[^b-z]";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("b".to_owned()), false);
-            assert_eq!(matcher.is_match("z".to_owned()), false);
-            assert_eq!(matcher.is_match("x".to_owned()), false);
-            assert_eq!(matcher.is_match("a".to_owned()), true);
+            assert_eq!(Matcher::is_match(&nfa, "b"), None);
+            assert_eq!(Matcher::is_match(&nfa, "z"), None);
+            assert_eq!(Matcher::is_match(&nfa, "x"), None);
+            assert_eq!(Matcher::is_match(&nfa, "a"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "za"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "az"), Some("a".to_owned()));
         }
         {
             let src = "[^bcd]";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("b".to_owned()), false);
-            assert_eq!(matcher.is_match("c".to_owned()), false);
-            assert_eq!(matcher.is_match("d".to_owned()), false);
-            assert_eq!(matcher.is_match("a".to_owned()), true);
-            assert_eq!(matcher.is_match("e".to_owned()), true);
+            assert_eq!(Matcher::is_match(&nfa, "b"), None);
+            assert_eq!(Matcher::is_match(&nfa, "c"), None);
+            assert_eq!(Matcher::is_match(&nfa, "d"), None);
+            assert_eq!(Matcher::is_match(&nfa, "a"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "e"), Some("e".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ba"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ab"), Some("a".to_owned()));
         }
         {
             let src = "a[^bc-yz]d";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("abd".to_owned()), false);
-            assert_eq!(matcher.is_match("azd".to_owned()), false);
-            assert_eq!(matcher.is_match("acd".to_owned()), false);
-            assert_eq!(matcher.is_match("ayd".to_owned()), false);
-            assert_eq!(matcher.is_match("axd".to_owned()), false);
-            assert_eq!(matcher.is_match("ad".to_owned()), false);
-            assert_eq!(matcher.is_match("aad".to_owned()), true);
+            assert_eq!(Matcher::is_match(&nfa, "abd"), None);
+            assert_eq!(Matcher::is_match(&nfa, "azd"), None);
+            assert_eq!(Matcher::is_match(&nfa, "acd"), None);
+            assert_eq!(Matcher::is_match(&nfa, "ayd"), None);
+            assert_eq!(Matcher::is_match(&nfa, "axd"), None);
+            assert_eq!(Matcher::is_match(&nfa, "aad"), Some("aad".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "ad"), None);
+            assert_eq!(Matcher::is_match(&nfa, "zaad"), Some("aad".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "aadz"), Some("aad".to_owned()));
         }
         {
             let src = "[^z-z]";
-            let matcher = run(src);
+            let nfa = run(src);
 
-            assert_eq!(matcher.is_match("z".to_owned()), false);
-            assert_eq!(matcher.is_match("a".to_owned()), true);
+            assert_eq!(Matcher::is_match(&nfa, "z"), None);
+            assert_eq!(Matcher::is_match(&nfa, "a"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "za"), Some("a".to_owned()));
+            assert_eq!(Matcher::is_match(&nfa, "az"), Some("a".to_owned()));
         }
     }
 
     #[test]
     fn pattern001() {
         let src = r"[a-zA-Z0-9_\.\+\-]+@[a-zA-Z0-9_\.]+[a-zA-Z]+";
-        let matcher = run(src);
+        let nfa = run(src);
 
-        assert_eq!(matcher.is_match("abc@example.com".to_owned()), true);
-        assert_eq!(matcher.is_match("abc+123@me.example.com".to_owned()), true);
-        assert_eq!(matcher.is_match("abc@example".to_owned()), true);
-        assert_eq!(matcher.is_match("abc@example.123".to_owned()), false);
-        assert_eq!(matcher.is_match("abc@def@example.com".to_owned()), false);
+        assert_eq!(
+            Matcher::is_match(&nfa, "abc@example.com"),
+            Some("abc@example.com".to_owned())
+        );
+        assert_eq!(
+            Matcher::is_match(&nfa, "abc+123@me.example.com"),
+            Some("abc+123@me.example.com".to_owned())
+        );
+        assert_eq!(
+            Matcher::is_match(&nfa, "abc@example"),
+            Some("abc@example".to_owned())
+        );
+        assert_eq!(
+            Matcher::is_match(&nfa, "abc@example.123"),
+            Some("abc@example".to_owned())
+        );
+        assert_eq!(
+            Matcher::is_match(&nfa, "abc@def@example.com"),
+            Some("abc@def".to_owned())
+        );
     }
 }
