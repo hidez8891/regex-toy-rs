@@ -35,19 +35,17 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(pattern: String) -> Self {
-        Parser {
+    pub fn new(pattern: &str) -> Result<SyntaxNode, String> {
+        let mut parser = Parser {
             stream: pattern
                 .chars()
                 .collect::<Vec<char>>()
                 .into_iter()
                 .peekable(),
-        }
-    }
+        };
 
-    pub fn parse(&mut self) -> Result<SyntaxNode, String> {
-        let node = self.parse_root()?;
-        match self.stream.next() {
+        let node = parser.parse_root()?;
+        match parser.stream.next() {
             Some(c) => Err(format!("parse is failed: {}", c)),
             None => Ok(node),
         }
@@ -318,8 +316,7 @@ mod tests {
     use super::*;
 
     fn run(pattern: &str) -> Result<SyntaxNode, String> {
-        let mut parser = Parser::new(pattern.to_owned());
-        parser.parse()
+        Parser::new(pattern)
     }
 
     fn make1(kind: SyntaxKind) -> SyntaxNode {

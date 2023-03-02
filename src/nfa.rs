@@ -331,9 +331,8 @@ mod tests {
     use crate::parser::Parser;
 
     fn run(pattern: &str) -> Nfa {
-        let mut parser = Parser::new(pattern.to_owned());
-        let result = parser.parse();
-        Generator::new(&result.unwrap())
+        let syntax = Parser::new(pattern).unwrap();
+        Generator::new(&syntax)
     }
 
     #[test]
