@@ -12,7 +12,7 @@ impl Nfa {
         Ok(nfa)
     }
 
-    pub fn is_match(&self, str: &str) -> Option<String> {
+    pub fn is_match<'a>(&self, str: &'a str) -> Option<&'a str> {
         Matcher::is_match(self, str)
     }
 }
@@ -247,17 +247,17 @@ impl Generator {
     }
 }
 
-struct Matcher<'a> {
+struct Matcher<'a, 'b> {
     nfa: &'a Nfa,
-    str: String,
+    str: &'b str,
     start_index: usize,
 }
 
-impl<'a> Matcher<'a> {
-    fn is_match(nfa: &'a Nfa, str: &str) -> Option<String> {
+impl<'a, 'b> Matcher<'a, 'b> {
+    fn is_match(nfa: &'a Nfa, str: &'b str) -> Option<&'b str> {
         let mut matcher = Matcher {
             nfa,
-            str: str.to_owned(),
+            str,
             start_index: 0,
         };
 
@@ -272,9 +272,9 @@ impl<'a> Matcher<'a> {
         None
     }
 
-    fn is_match_impl(&self, index: usize, node_id: usize) -> Option<String> {
+    fn is_match_impl(&self, index: usize, node_id: usize) -> Option<&'b str> {
         if node_id == 1 {
-            return Some(self.str[self.start_index..index].to_string());
+            return Some(&self.str[self.start_index..index]);
         }
 
         let node = &self.nfa.nodes[node_id];
@@ -350,10 +350,10 @@ mod tests {
         let src = "abc";
         let nfa = run(src);
 
-        assert_eq!(nfa.is_match("abc"), Some("abc".to_owned()));
+        assert_eq!(nfa.is_match("abc"), Some("abc"));
         assert_eq!(nfa.is_match("ab"), None);
-        assert_eq!(nfa.is_match("abcd"), Some("abc".to_owned()));
-        assert_eq!(nfa.is_match("zabc"), Some("abc".to_owned()));
+        assert_eq!(nfa.is_match("abcd"), Some("abc"));
+        assert_eq!(nfa.is_match("zabc"), Some("abc"));
     }
 
     #[test]
@@ -361,11 +361,11 @@ mod tests {
         let src = r"a\+c";
         let nfa = run(src);
 
-        assert_eq!(nfa.is_match("a+c"), Some("a+c".to_owned()));
+        assert_eq!(nfa.is_match("a+c"), Some("a+c"));
         assert_eq!(nfa.is_match("aac"), None);
         assert_eq!(nfa.is_match("ac"), None);
-        assert_eq!(nfa.is_match("a+cz"), Some("a+c".to_owned()));
-        assert_eq!(nfa.is_match("za+c"), Some("a+c".to_owned()));
+        assert_eq!(nfa.is_match("a+cz"), Some("a+c"));
+        assert_eq!(nfa.is_match("za+c"), Some("a+c"));
     }
 
     #[test]
@@ -374,22 +374,22 @@ mod tests {
             let src = "a.c";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("abc"), Some("abc".to_owned()));
-            assert_eq!(nfa.is_match("adc"), Some("adc".to_owned()));
+            assert_eq!(nfa.is_match("abc"), Some("abc"));
+            assert_eq!(nfa.is_match("adc"), Some("adc"));
             assert_eq!(nfa.is_match("ac"), None);
             assert_eq!(nfa.is_match("abbc"), None);
-            assert_eq!(nfa.is_match("zabc"), Some("abc".to_owned()));
-            assert_eq!(nfa.is_match("abcz"), Some("abc".to_owned()));
+            assert_eq!(nfa.is_match("zabc"), Some("abc"));
+            assert_eq!(nfa.is_match("abcz"), Some("abc"));
         }
         {
             let src = "a.";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("ab"), Some("ab".to_owned()));
-            assert_eq!(nfa.is_match("ad"), Some("ad".to_owned()));
+            assert_eq!(nfa.is_match("ab"), Some("ab"));
+            assert_eq!(nfa.is_match("ad"), Some("ad"));
             assert_eq!(nfa.is_match("a"), None);
-            assert_eq!(nfa.is_match("abz"), Some("ab".to_owned()));
-            assert_eq!(nfa.is_match("zab"), Some("ab".to_owned()));
+            assert_eq!(nfa.is_match("abz"), Some("ab"));
+            assert_eq!(nfa.is_match("zab"), Some("ab"));
         }
     }
 
@@ -399,9 +399,9 @@ mod tests {
             let src = "^abc";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("abc"), Some("abc".to_owned()));
+            assert_eq!(nfa.is_match("abc"), Some("abc"));
             assert_eq!(nfa.is_match("zabc"), None);
-            assert_eq!(nfa.is_match("abcz"), Some("abc".to_owned()));
+            assert_eq!(nfa.is_match("abcz"), Some("abc"));
         }
     }
 
@@ -411,8 +411,8 @@ mod tests {
             let src = "abc$";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("abc"), Some("abc".to_owned()));
-            assert_eq!(nfa.is_match("zabc"), Some("abc".to_owned()));
+            assert_eq!(nfa.is_match("abc"), Some("abc"));
+            assert_eq!(nfa.is_match("zabc"), Some("abc"));
             assert_eq!(nfa.is_match("abcz"), None);
         }
     }
@@ -423,20 +423,20 @@ mod tests {
             let src = "a(bc)d";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("abcd"), Some("abcd".to_owned()));
+            assert_eq!(nfa.is_match("abcd"), Some("abcd"));
             assert_eq!(nfa.is_match("abc"), None);
             assert_eq!(nfa.is_match("ad"), None);
-            assert_eq!(nfa.is_match("zabcd"), Some("abcd".to_owned()));
-            assert_eq!(nfa.is_match("abcdz"), Some("abcd".to_owned()));
+            assert_eq!(nfa.is_match("zabcd"), Some("abcd"));
+            assert_eq!(nfa.is_match("abcdz"), Some("abcd"));
         }
         {
             let src = "a(bc)";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("abc"), Some("abc".to_owned()));
+            assert_eq!(nfa.is_match("abc"), Some("abc"));
             assert_eq!(nfa.is_match("a"), None);
-            assert_eq!(nfa.is_match("zabc"), Some("abc".to_owned()));
-            assert_eq!(nfa.is_match("abcd"), Some("abc".to_owned()));
+            assert_eq!(nfa.is_match("zabc"), Some("abc"));
+            assert_eq!(nfa.is_match("abcd"), Some("abc"));
         }
     }
 
@@ -445,13 +445,13 @@ mod tests {
         let src = "abc|def|ghi";
         let nfa = run(src);
 
-        assert_eq!(nfa.is_match("abc"), Some("abc".to_owned()));
-        assert_eq!(nfa.is_match("def"), Some("def".to_owned()));
-        assert_eq!(nfa.is_match("ghi"), Some("ghi".to_owned()));
+        assert_eq!(nfa.is_match("abc"), Some("abc"));
+        assert_eq!(nfa.is_match("def"), Some("def"));
+        assert_eq!(nfa.is_match("ghi"), Some("ghi"));
         assert_eq!(nfa.is_match("adg"), None);
         assert_eq!(nfa.is_match("ab"), None);
-        assert_eq!(nfa.is_match("zabc"), Some("abc".to_owned()));
-        assert_eq!(nfa.is_match("defz"), Some("def".to_owned()));
+        assert_eq!(nfa.is_match("zabc"), Some("abc"));
+        assert_eq!(nfa.is_match("defz"), Some("def"));
     }
 
     #[test]
@@ -460,49 +460,49 @@ mod tests {
             let src = "ab*c";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("ac"), Some("ac".to_owned()));
-            assert_eq!(nfa.is_match("abc"), Some("abc".to_owned()));
-            assert_eq!(nfa.is_match("abbc"), Some("abbc".to_owned()));
-            assert_eq!(nfa.is_match("abbbc"), Some("abbbc".to_owned()));
+            assert_eq!(nfa.is_match("ac"), Some("ac"));
+            assert_eq!(nfa.is_match("abc"), Some("abc"));
+            assert_eq!(nfa.is_match("abbc"), Some("abbc"));
+            assert_eq!(nfa.is_match("abbbc"), Some("abbbc"));
             assert_eq!(nfa.is_match("az"), None);
-            assert_eq!(nfa.is_match("zac"), Some("ac".to_owned()));
-            assert_eq!(nfa.is_match("acz"), Some("ac".to_owned()));
+            assert_eq!(nfa.is_match("zac"), Some("ac"));
+            assert_eq!(nfa.is_match("acz"), Some("ac"));
         }
         {
             let src = "ab*";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("a"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("ab"), Some("ab".to_owned()));
-            assert_eq!(nfa.is_match("abb"), Some("abb".to_owned()));
-            assert_eq!(nfa.is_match("abbb"), Some("abbb".to_owned()));
+            assert_eq!(nfa.is_match("a"), Some("a"));
+            assert_eq!(nfa.is_match("ab"), Some("ab"));
+            assert_eq!(nfa.is_match("abb"), Some("abb"));
+            assert_eq!(nfa.is_match("abbb"), Some("abbb"));
             assert_eq!(nfa.is_match("b"), None);
-            assert_eq!(nfa.is_match("za"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("az"), Some("a".to_owned()));
+            assert_eq!(nfa.is_match("za"), Some("a"));
+            assert_eq!(nfa.is_match("az"), Some("a"));
         }
         {
             let src = "ab*b*";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("a"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("ab"), Some("ab".to_owned()));
-            assert_eq!(nfa.is_match("abb"), Some("abb".to_owned()));
-            assert_eq!(nfa.is_match("abbb"), Some("abbb".to_owned()));
+            assert_eq!(nfa.is_match("a"), Some("a"));
+            assert_eq!(nfa.is_match("ab"), Some("ab"));
+            assert_eq!(nfa.is_match("abb"), Some("abb"));
+            assert_eq!(nfa.is_match("abbb"), Some("abbb"));
             assert_eq!(nfa.is_match("b"), None);
-            assert_eq!(nfa.is_match("za"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("az"), Some("a".to_owned()));
+            assert_eq!(nfa.is_match("za"), Some("a"));
+            assert_eq!(nfa.is_match("az"), Some("a"));
         }
         {
             let src = "a.*b";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("ab"), Some("ab".to_owned()));
-            assert_eq!(nfa.is_match("axb"), Some("axb".to_owned()));
-            assert_eq!(nfa.is_match("axbaxb"), Some("axbaxb".to_owned()));
+            assert_eq!(nfa.is_match("ab"), Some("ab"));
+            assert_eq!(nfa.is_match("axb"), Some("axb"));
+            assert_eq!(nfa.is_match("axbaxb"), Some("axbaxb"));
             #[rustfmt::skip]
-            assert_eq!(nfa.is_match("axaxbxb"), Some("axaxbxb".to_owned()));
-            assert_eq!(nfa.is_match("baxb"), Some("axb".to_owned()));
-            assert_eq!(nfa.is_match("axbz"), Some("axb".to_owned()));
+            assert_eq!(nfa.is_match("axaxbxb"), Some("axaxbxb"));
+            assert_eq!(nfa.is_match("baxb"), Some("axb"));
+            assert_eq!(nfa.is_match("axbz"), Some("axb"));
         }
     }
 
@@ -512,47 +512,46 @@ mod tests {
             let src = "ab+c";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("abc"), Some("abc".to_owned()));
-            assert_eq!(nfa.is_match("abbc"), Some("abbc".to_owned()));
-            assert_eq!(nfa.is_match("abbbc"), Some("abbbc".to_owned()));
+            assert_eq!(nfa.is_match("abc"), Some("abc"));
+            assert_eq!(nfa.is_match("abbc"), Some("abbc"));
+            assert_eq!(nfa.is_match("abbbc"), Some("abbbc"));
             assert_eq!(nfa.is_match("ac"), None);
-            assert_eq!(nfa.is_match("zabc"), Some("abc".to_owned()));
-            assert_eq!(nfa.is_match("abcz"), Some("abc".to_owned()));
+            assert_eq!(nfa.is_match("zabc"), Some("abc"));
+            assert_eq!(nfa.is_match("abcz"), Some("abc"));
         }
         {
             let src = "ab+";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("ab"), Some("ab".to_owned()));
-            assert_eq!(nfa.is_match("abb"), Some("abb".to_owned()));
-            assert_eq!(nfa.is_match("abbb"), Some("abbb".to_owned()));
+            assert_eq!(nfa.is_match("ab"), Some("ab"));
+            assert_eq!(nfa.is_match("abb"), Some("abb"));
+            assert_eq!(nfa.is_match("abbb"), Some("abbb"));
             assert_eq!(nfa.is_match("a"), None);
-            assert_eq!(nfa.is_match("zab"), Some("ab".to_owned()));
-            assert_eq!(nfa.is_match("abz"), Some("ab".to_owned()));
+            assert_eq!(nfa.is_match("zab"), Some("ab"));
+            assert_eq!(nfa.is_match("abz"), Some("ab"));
         }
         {
             let src = "ab+b+";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("abb"), Some("abb".to_owned()));
-            assert_eq!(nfa.is_match("abbb"), Some("abbb".to_owned()));
-            assert_eq!(nfa.is_match("abbbb"), Some("abbbb".to_owned()));
+            assert_eq!(nfa.is_match("abb"), Some("abb"));
+            assert_eq!(nfa.is_match("abbb"), Some("abbb"));
+            assert_eq!(nfa.is_match("abbbb"), Some("abbbb"));
             assert_eq!(nfa.is_match("a"), None);
             assert_eq!(nfa.is_match("ab"), None);
-            assert_eq!(nfa.is_match("zabb"), Some("abb".to_owned()));
-            assert_eq!(nfa.is_match("abbz"), Some("abb".to_owned()));
+            assert_eq!(nfa.is_match("zabb"), Some("abb"));
+            assert_eq!(nfa.is_match("abbz"), Some("abb"));
         }
         {
             let src = "a.+b";
             let nfa = run(src);
 
             assert_eq!(nfa.is_match("ab"), None);
-            assert_eq!(nfa.is_match("axb"), Some("axb".to_owned()));
-            assert_eq!(nfa.is_match("axbaxb"), Some("axbaxb".to_owned()));
-            #[rustfmt::skip]
-            assert_eq!(nfa.is_match("axaxbxb"), Some("axaxbxb".to_owned()));
-            assert_eq!(nfa.is_match("baxb"), Some("axb".to_owned()));
-            assert_eq!(nfa.is_match("axbz"), Some("axb".to_owned()));
+            assert_eq!(nfa.is_match("axb"), Some("axb"));
+            assert_eq!(nfa.is_match("axbaxb"), Some("axbaxb"));
+            assert_eq!(nfa.is_match("axaxbxb"), Some("axaxbxb"));
+            assert_eq!(nfa.is_match("baxb"), Some("axb"));
+            assert_eq!(nfa.is_match("axbz"), Some("axb"));
         }
     }
 
@@ -562,21 +561,21 @@ mod tests {
             let src = "ab?c";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("ac"), Some("ac".to_owned()));
-            assert_eq!(nfa.is_match("abc"), Some("abc".to_owned()));
+            assert_eq!(nfa.is_match("ac"), Some("ac"));
+            assert_eq!(nfa.is_match("abc"), Some("abc"));
             assert_eq!(nfa.is_match("a"), None);
-            assert_eq!(nfa.is_match("zac"), Some("ac".to_owned()));
-            assert_eq!(nfa.is_match("acz"), Some("ac".to_owned()));
+            assert_eq!(nfa.is_match("zac"), Some("ac"));
+            assert_eq!(nfa.is_match("acz"), Some("ac"));
         }
         {
             let src = "ab?";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("a"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("ab"), Some("ab".to_owned()));
+            assert_eq!(nfa.is_match("a"), Some("a"));
+            assert_eq!(nfa.is_match("ab"), Some("ab"));
             assert_eq!(nfa.is_match("b"), None);
-            assert_eq!(nfa.is_match("za"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("az"), Some("a".to_owned()));
+            assert_eq!(nfa.is_match("za"), Some("a"));
+            assert_eq!(nfa.is_match("az"), Some("a"));
         }
     }
 
@@ -586,59 +585,59 @@ mod tests {
             let src = "a[b-z]d";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("abd"), Some("abd".to_owned()));
-            assert_eq!(nfa.is_match("azd"), Some("azd".to_owned()));
-            assert_eq!(nfa.is_match("axd"), Some("axd".to_owned()));
+            assert_eq!(nfa.is_match("abd"), Some("abd"));
+            assert_eq!(nfa.is_match("azd"), Some("azd"));
+            assert_eq!(nfa.is_match("axd"), Some("axd"));
             assert_eq!(nfa.is_match("ad"), None);
             assert_eq!(nfa.is_match("aad"), None);
-            assert_eq!(nfa.is_match("zabd"), Some("abd".to_owned()));
-            assert_eq!(nfa.is_match("abdz"), Some("abd".to_owned()));
+            assert_eq!(nfa.is_match("zabd"), Some("abd"));
+            assert_eq!(nfa.is_match("abdz"), Some("abd"));
         }
         {
             let src = "[b-z]";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("b"), Some("b".to_owned()));
-            assert_eq!(nfa.is_match("z"), Some("z".to_owned()));
-            assert_eq!(nfa.is_match("x"), Some("x".to_owned()));
+            assert_eq!(nfa.is_match("b"), Some("b"));
+            assert_eq!(nfa.is_match("z"), Some("z"));
+            assert_eq!(nfa.is_match("x"), Some("x"));
             assert_eq!(nfa.is_match("a"), None);
-            assert_eq!(nfa.is_match("ab"), Some("b".to_owned()));
-            assert_eq!(nfa.is_match("bz"), Some("b".to_owned()));
+            assert_eq!(nfa.is_match("ab"), Some("b"));
+            assert_eq!(nfa.is_match("bz"), Some("b"));
         }
         {
             let src = "[bcd]";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("b"), Some("b".to_owned()));
-            assert_eq!(nfa.is_match("c"), Some("c".to_owned()));
-            assert_eq!(nfa.is_match("d"), Some("d".to_owned()));
+            assert_eq!(nfa.is_match("b"), Some("b"));
+            assert_eq!(nfa.is_match("c"), Some("c"));
+            assert_eq!(nfa.is_match("d"), Some("d"));
             assert_eq!(nfa.is_match("a"), None);
             assert_eq!(nfa.is_match("e"), None);
-            assert_eq!(nfa.is_match("ab"), Some("b".to_owned()));
-            assert_eq!(nfa.is_match("bz"), Some("b".to_owned()));
+            assert_eq!(nfa.is_match("ab"), Some("b"));
+            assert_eq!(nfa.is_match("bz"), Some("b"));
         }
         {
             let src = "a[bc-yz]d";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("abd"), Some("abd".to_owned()));
-            assert_eq!(nfa.is_match("azd"), Some("azd".to_owned()));
-            assert_eq!(nfa.is_match("acd"), Some("acd".to_owned()));
-            assert_eq!(nfa.is_match("ayd"), Some("ayd".to_owned()));
-            assert_eq!(nfa.is_match("axd"), Some("axd".to_owned()));
+            assert_eq!(nfa.is_match("abd"), Some("abd"));
+            assert_eq!(nfa.is_match("azd"), Some("azd"));
+            assert_eq!(nfa.is_match("acd"), Some("acd"));
+            assert_eq!(nfa.is_match("ayd"), Some("ayd"));
+            assert_eq!(nfa.is_match("axd"), Some("axd"));
             assert_eq!(nfa.is_match("aad"), None);
             assert_eq!(nfa.is_match("ad"), None);
-            assert_eq!(nfa.is_match("zabd"), Some("abd".to_owned()));
-            assert_eq!(nfa.is_match("abdz"), Some("abd".to_owned()));
+            assert_eq!(nfa.is_match("zabd"), Some("abd"));
+            assert_eq!(nfa.is_match("abdz"), Some("abd"));
         }
         {
             let src = "[z-z]";
             let nfa = run(src);
 
-            assert_eq!(nfa.is_match("z"), Some("z".to_owned()));
+            assert_eq!(nfa.is_match("z"), Some("z"));
             assert_eq!(nfa.is_match("a"), None);
-            assert_eq!(nfa.is_match("az"), Some("z".to_owned()));
-            assert_eq!(nfa.is_match("za"), Some("z".to_owned()));
+            assert_eq!(nfa.is_match("az"), Some("z"));
+            assert_eq!(nfa.is_match("za"), Some("z"));
         }
     }
 
@@ -651,10 +650,10 @@ mod tests {
             assert_eq!(nfa.is_match("abd"), None);
             assert_eq!(nfa.is_match("azd"), None);
             assert_eq!(nfa.is_match("axd"), None);
-            assert_eq!(nfa.is_match("aad"), Some("aad".to_owned()));
+            assert_eq!(nfa.is_match("aad"), Some("aad"));
             assert_eq!(nfa.is_match("ad"), None);
-            assert_eq!(nfa.is_match("zaad"), Some("aad".to_owned()));
-            assert_eq!(nfa.is_match("aadz"), Some("aad".to_owned()));
+            assert_eq!(nfa.is_match("zaad"), Some("aad"));
+            assert_eq!(nfa.is_match("aadz"), Some("aad"));
         }
         {
             let src = "[^b-z]";
@@ -663,9 +662,9 @@ mod tests {
             assert_eq!(nfa.is_match("b"), None);
             assert_eq!(nfa.is_match("z"), None);
             assert_eq!(nfa.is_match("x"), None);
-            assert_eq!(nfa.is_match("a"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("za"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("az"), Some("a".to_owned()));
+            assert_eq!(nfa.is_match("a"), Some("a"));
+            assert_eq!(nfa.is_match("za"), Some("a"));
+            assert_eq!(nfa.is_match("az"), Some("a"));
         }
         {
             let src = "[^bcd]";
@@ -674,10 +673,10 @@ mod tests {
             assert_eq!(nfa.is_match("b"), None);
             assert_eq!(nfa.is_match("c"), None);
             assert_eq!(nfa.is_match("d"), None);
-            assert_eq!(nfa.is_match("a"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("e"), Some("e".to_owned()));
-            assert_eq!(nfa.is_match("ba"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("ab"), Some("a".to_owned()));
+            assert_eq!(nfa.is_match("a"), Some("a"));
+            assert_eq!(nfa.is_match("e"), Some("e"));
+            assert_eq!(nfa.is_match("ba"), Some("a"));
+            assert_eq!(nfa.is_match("ab"), Some("a"));
         }
         {
             let src = "a[^bc-yz]d";
@@ -688,19 +687,19 @@ mod tests {
             assert_eq!(nfa.is_match("acd"), None);
             assert_eq!(nfa.is_match("ayd"), None);
             assert_eq!(nfa.is_match("axd"), None);
-            assert_eq!(nfa.is_match("aad"), Some("aad".to_owned()));
+            assert_eq!(nfa.is_match("aad"), Some("aad"));
             assert_eq!(nfa.is_match("ad"), None);
-            assert_eq!(nfa.is_match("zaad"), Some("aad".to_owned()));
-            assert_eq!(nfa.is_match("aadz"), Some("aad".to_owned()));
+            assert_eq!(nfa.is_match("zaad"), Some("aad"));
+            assert_eq!(nfa.is_match("aadz"), Some("aad"));
         }
         {
             let src = "[^z-z]";
             let nfa = run(src);
 
             assert_eq!(nfa.is_match("z"), None);
-            assert_eq!(nfa.is_match("a"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("za"), Some("a".to_owned()));
-            assert_eq!(nfa.is_match("az"), Some("a".to_owned()));
+            assert_eq!(nfa.is_match("a"), Some("a"));
+            assert_eq!(nfa.is_match("za"), Some("a"));
+            assert_eq!(nfa.is_match("az"), Some("a"));
         }
     }
 
@@ -710,55 +709,27 @@ mod tests {
             let src = r"[a-zA-Z0-9_\.\+\-]+@[a-zA-Z0-9_\.]+[a-zA-Z]+";
             let nfa = run(src);
 
-            assert_eq!(
-                nfa.is_match("abc@example.com"),
-                Some("abc@example.com".to_owned())
-            );
+            assert_eq!(nfa.is_match("abc@example.com"), Some("abc@example.com"));
             assert_eq!(
                 nfa.is_match("abc+123@me.example.com"),
-                Some("abc+123@me.example.com".to_owned())
+                Some("abc+123@me.example.com")
             );
-            #[rustfmt::skip]
-            assert_eq!(
-                nfa.is_match("abc@example"),
-                Some("abc@example".to_owned())
-            );
-            assert_eq!(
-                nfa.is_match("abc@example.123"),
-                Some("abc@example".to_owned())
-            );
-            assert_eq!(
-                nfa.is_match("abc@def@example.com"),
-                Some("abc@def".to_owned())
-            );
+            assert_eq!(nfa.is_match("abc@example"), Some("abc@example"));
+            assert_eq!(nfa.is_match("abc@example.123"), Some("abc@example"));
+            assert_eq!(nfa.is_match("abc@def@example.com"), Some("abc@def"));
         }
         {
             let src = r"^[a-zA-Z0-9_\.\+\-]+@[a-zA-Z0-9_\.]+[a-zA-Z]+$";
             let nfa = run(src);
 
-            assert_eq!(
-                nfa.is_match("abc@example.com"),
-                Some("abc@example.com".to_owned())
-            );
+            assert_eq!(nfa.is_match("abc@example.com"), Some("abc@example.com"));
             assert_eq!(
                 nfa.is_match("abc+123@me.example.com"),
-                Some("abc+123@me.example.com".to_owned())
+                Some("abc+123@me.example.com")
             );
-            #[rustfmt::skip]
-            assert_eq!(
-                nfa.is_match("abc@example"),
-                Some("abc@example".to_owned())
-            );
-            #[rustfmt::skip]
-            assert_eq!(
-                nfa.is_match("abc@example.123"),
-                None,
-            );
-            #[rustfmt::skip]
-            assert_eq!(
-                nfa.is_match("abc@def@example.com"),
-                None,
-            );
+            assert_eq!(nfa.is_match("abc@example"), Some("abc@example"));
+            assert_eq!(nfa.is_match("abc@example.123"), None);
+            assert_eq!(nfa.is_match("abc@def@example.com"), None);
         }
     }
 }
