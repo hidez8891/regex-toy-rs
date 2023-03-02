@@ -2,44 +2,44 @@ use crate::parser::{SyntaxKind, SyntaxNode};
 use std::collections::BTreeSet;
 
 pub struct Nfa {
-    nodes: Vec<NfaNode>,
+    nodes: Vec<Node>,
 }
 
-struct NfaNode {
-    nexts: Vec<NfaEdge>,
+struct Node {
+    nexts: Vec<Edge>,
 }
 
-struct NfaEdge {
-    action: NfaAction,
+struct Edge {
+    action: EdgeAction,
     next_id: usize,
 }
 
-enum NfaAction {
+enum EdgeAction {
     Asap,
     Match(char),
     MatchAny,
     MatchSOL,
     MatchEOL,
-    MatchSet(Vec<NfaMatchAction>),
-    UnmatchSet(Vec<NfaMatchAction>),
+    MatchSet(Vec<MatchSetItem>),
+    UnmatchSet(Vec<MatchSetItem>),
 }
 
 #[derive(PartialEq, PartialOrd, Eq, Ord)]
-enum NfaMatchAction {
+enum MatchSetItem {
     Char(char),
     Range(char, char),
 }
 
 pub struct Generator {
-    nodes: Vec<NfaNode>,
+    nodes: Vec<Node>,
 }
 
 impl Generator {
     pub fn new(syntax: &SyntaxNode) -> Nfa {
         let mut generator = Generator {
             nodes: vec![
-                NfaNode { nexts: vec![] }, // root
-                NfaNode { nexts: vec![] }, // submit
+                Node { nexts: vec![] }, // root
+                Node { nexts: vec![] }, // submit
             ],
         };
         generator.make(syntax);
@@ -55,8 +55,8 @@ impl Generator {
         let node_id = self.make_root(syntax, 1);
 
         // bind the next node to the first node.
-        self.nodes[0].nexts.push(NfaEdge {
-            action: NfaAction::Asap,
+        self.nodes[0].nexts.push(Edge {
+            action: EdgeAction::Asap,
             next_id: node_id,
         });
     }
@@ -89,12 +89,12 @@ impl Generator {
 
     fn make_union(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let node_id = self.nodes.len();
-        self.nodes.push(NfaNode { nexts: vec![] });
+        self.nodes.push(Node { nexts: vec![] });
 
         for child in syntax.children.iter() {
             let match_id = self.make_root(child, dst_id);
-            self.nodes[node_id].nexts.push(NfaEdge {
-                action: NfaAction::Asap,
+            self.nodes[node_id].nexts.push(Edge {
+                action: EdgeAction::Asap,
                 next_id: match_id,
             });
         }
@@ -103,16 +103,16 @@ impl Generator {
 
     fn make_many_star(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let loop_id = self.nodes.len();
-        self.nodes.push(NfaNode { nexts: vec![] });
+        self.nodes.push(Node { nexts: vec![] });
 
         let match_id = self.make_root(&syntax.children[0], loop_id);
-        self.nodes[loop_id].nexts.push(NfaEdge {
-            action: NfaAction::Asap,
+        self.nodes[loop_id].nexts.push(Edge {
+            action: EdgeAction::Asap,
             next_id: match_id,
         });
 
-        self.nodes[loop_id].nexts.push(NfaEdge {
-            action: NfaAction::Asap,
+        self.nodes[loop_id].nexts.push(Edge {
+            action: EdgeAction::Asap,
             next_id: dst_id,
         });
         loop_id
@@ -120,16 +120,16 @@ impl Generator {
 
     fn make_many_plus(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let loop_id = self.nodes.len();
-        self.nodes.push(NfaNode { nexts: vec![] });
+        self.nodes.push(Node { nexts: vec![] });
 
         let match_id = self.make_root(&syntax.children[0], loop_id);
-        self.nodes[loop_id].nexts.push(NfaEdge {
-            action: NfaAction::Asap,
+        self.nodes[loop_id].nexts.push(Edge {
+            action: EdgeAction::Asap,
             next_id: match_id,
         });
 
-        self.nodes[loop_id].nexts.push(NfaEdge {
-            action: NfaAction::Asap,
+        self.nodes[loop_id].nexts.push(Edge {
+            action: EdgeAction::Asap,
             next_id: dst_id,
         });
         match_id
@@ -137,8 +137,8 @@ impl Generator {
 
     fn make_option(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let match_id = self.make_root(&syntax.children[0], dst_id);
-        self.nodes[match_id].nexts.push(NfaEdge {
-            action: NfaAction::Asap,
+        self.nodes[match_id].nexts.push(Edge {
+            action: EdgeAction::Asap,
             next_id: dst_id,
         });
         match_id
@@ -146,9 +146,9 @@ impl Generator {
 
     fn make_match_any(&mut self, dst_id: usize) -> usize {
         let node_id = self.nodes.len();
-        self.nodes.push(NfaNode {
-            nexts: vec![NfaEdge {
-                action: NfaAction::MatchAny,
+        self.nodes.push(Node {
+            nexts: vec![Edge {
+                action: EdgeAction::MatchAny,
                 next_id: dst_id,
             }],
         });
@@ -157,9 +157,9 @@ impl Generator {
 
     fn make_match_sol(&mut self, dst_id: usize) -> usize {
         let node_id = self.nodes.len();
-        self.nodes.push(NfaNode {
-            nexts: vec![NfaEdge {
-                action: NfaAction::MatchSOL,
+        self.nodes.push(Node {
+            nexts: vec![Edge {
+                action: EdgeAction::MatchSOL,
                 next_id: dst_id,
             }],
         });
@@ -168,9 +168,9 @@ impl Generator {
 
     fn make_match_eol(&mut self, dst_id: usize) -> usize {
         let node_id = self.nodes.len();
-        self.nodes.push(NfaNode {
-            nexts: vec![NfaEdge {
-                action: NfaAction::MatchEOL,
+        self.nodes.push(Node {
+            nexts: vec![Edge {
+                action: EdgeAction::MatchEOL,
                 next_id: dst_id,
             }],
         });
@@ -179,9 +179,9 @@ impl Generator {
 
     fn make_match_char(&mut self, c: char, dst_id: usize) -> usize {
         let node_id = self.nodes.len();
-        self.nodes.push(NfaNode {
-            nexts: vec![NfaEdge {
-                action: NfaAction::Match(c),
+        self.nodes.push(Node {
+            nexts: vec![Edge {
+                action: EdgeAction::Match(c),
                 next_id: dst_id,
             }],
         });
@@ -192,9 +192,9 @@ impl Generator {
         let set = self.make_set_items(syntax).into_iter().collect::<Vec<_>>();
 
         let node_id = self.nodes.len();
-        self.nodes.push(NfaNode {
-            nexts: vec![NfaEdge {
-                action: NfaAction::MatchSet(set),
+        self.nodes.push(Node {
+            nexts: vec![Edge {
+                action: EdgeAction::MatchSet(set),
                 next_id: dst_id,
             }],
         });
@@ -205,16 +205,16 @@ impl Generator {
         let set = self.make_set_items(syntax).into_iter().collect::<Vec<_>>();
 
         let node_id = self.nodes.len();
-        self.nodes.push(NfaNode {
-            nexts: vec![NfaEdge {
-                action: NfaAction::UnmatchSet(set),
+        self.nodes.push(Node {
+            nexts: vec![Edge {
+                action: EdgeAction::UnmatchSet(set),
                 next_id: dst_id,
             }],
         });
         node_id
     }
 
-    fn make_set_items(&mut self, syntax: &SyntaxNode) -> BTreeSet<NfaMatchAction> {
+    fn make_set_items(&mut self, syntax: &SyntaxNode) -> BTreeSet<MatchSetItem> {
         let mut set = BTreeSet::new();
         for child in syntax.children.iter() {
             match child.kind {
@@ -223,10 +223,10 @@ impl Generator {
                     set.extend(res.into_iter());
                 }
                 SyntaxKind::Match(c) => {
-                    set.insert(NfaMatchAction::Char(c));
+                    set.insert(MatchSetItem::Char(c));
                 }
                 SyntaxKind::MatchRange(a, b) => {
-                    set.insert(NfaMatchAction::Range(a, b));
+                    set.insert(MatchSetItem::Range(a, b));
                 }
                 _ => unreachable!(),
             };
@@ -269,46 +269,46 @@ impl<'a> Matcher<'a> {
         for edge in node.nexts.iter() {
             #[rustfmt::skip]
             let result = match &edge.action {
-                NfaAction::Asap =>
+                EdgeAction::Asap =>
                     self.is_match_impl(index, edge.next_id),
-                NfaAction::Match(t) =>
+                EdgeAction::Match(t) =>
                     self.str.chars().nth(index)
                         .filter(|c| *c == *t)
                         .and_then(|_|
                             self.is_match_impl(index + 1, edge.next_id)
                         ),
-                NfaAction::MatchAny =>
+                EdgeAction::MatchAny =>
                     self.str.chars().nth(index)
                         .and_then(|_|
                             self.is_match_impl(index + 1, edge.next_id),
                         ),
-                NfaAction::MatchSOL =>
+                EdgeAction::MatchSOL =>
                     Some(index).filter(|p| *p == 0)
                         .and_then(|_|
                             self.is_match_impl(index, edge.next_id)
                         ),
-                NfaAction::MatchEOL =>
+                EdgeAction::MatchEOL =>
                     Some(index).filter(|p| *p == self.str.len())
                         .and_then(|_|
                             self.is_match_impl(index, edge.next_id)
                         ),
-                NfaAction::MatchSet(set) =>
+                EdgeAction::MatchSet(set) =>
                     self.str.chars().nth(index)
                         .filter(|c|
                             set.iter().any(|m| match m {
-                                NfaMatchAction::Char(t) => *t == *c,
-                                NfaMatchAction::Range(a, b) => *a <= *c && *c <= *b,
+                                MatchSetItem::Char(t) => *t == *c,
+                                MatchSetItem::Range(a, b) => *a <= *c && *c <= *b,
                             })
                         )
                         .and_then(|_|
                             self.is_match_impl(index + 1, edge.next_id)
                         ),
-                NfaAction::UnmatchSet(set) =>
+                EdgeAction::UnmatchSet(set) =>
                     self.str.chars().nth(index)
                         .filter(|c|
                             set.iter().all(|m| match m {
-                                NfaMatchAction::Char(t) => *t != *c,
-                                NfaMatchAction::Range(a, b) => *c < *a || *b < *c,
+                                MatchSetItem::Char(t) => *t != *c,
+                                MatchSetItem::Range(a, b) => *c < *a || *b < *c,
                             })
                         )
                         .and_then(|_|
