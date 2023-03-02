@@ -48,7 +48,7 @@ impl Parser {
     pub fn parse(&mut self) -> Result<SyntaxNode, String> {
         let node = self.parse_root()?;
         match self.stream.next() {
-            Some(c) => Err(format!("invalid parsing: {}", c)),
+            Some(c) => Err(format!("parse is failed: {}", c)),
             None => Ok(node),
         }
     }
@@ -72,7 +72,7 @@ impl Parser {
 
                     let rhs = self.parse_concat()?;
                     if rhs.kind == SyntaxKind::None {
-                        return Err("missing element for union operator".to_owned());
+                        return Err("missing right term of the union operator".to_owned());
                     }
                     children.push(rhs);
                 }
@@ -166,8 +166,8 @@ impl Parser {
 
         match self.stream.next() {
             Some(')') => Ok(node),
-            Some(c) => Err(format!("closing parentheses do not match, get '{}'", c)),
-            _ => Err("closing parentheses do not match, get EOL".to_owned()),
+            Some(c) => Err(format!("unmatched opening parentheses, get '{}'", c)),
+            _ => Err("unmatched opening parentheses, get EOL".to_owned()),
         }
     }
 
@@ -191,8 +191,8 @@ impl Parser {
                     })
                 }
             }
-            Some(c) => Err(format!("closing brackets do not match, get '{}'", c)),
-            _ => Err("closing brackets do not match, get EOL".to_owned()),
+            Some(c) => Err(format!("unmatched opening brackets, get '{}'", c)),
+            _ => Err("unmatched opening brackets, get EOL".to_owned()),
         }
     }
 
@@ -230,7 +230,7 @@ impl Parser {
 
                 let rhs = self.parse_char()?;
                 if rhs.kind == SyntaxKind::None {
-                    return Err("missing item for range end".to_owned());
+                    return Err("missing range end character".to_owned());
                 }
 
                 if let (SyntaxKind::Match(a), SyntaxKind::Match(b)) = (node.kind, rhs.kind) {
