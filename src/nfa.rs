@@ -47,6 +47,7 @@ struct Generator {
 }
 
 impl Generator {
+    #[allow(clippy::new_ret_no_self)]
     fn new(syntax: &SyntaxNode) -> Nfa {
         let mut generator = Generator {
             nodes: vec![
@@ -226,7 +227,8 @@ impl Generator {
         node_id
     }
 
-    fn make_set_items(&mut self, syntax: &SyntaxNode) -> BTreeSet<MatchSetItem> {
+    #[allow(clippy::only_used_in_recursion)]
+    fn make_set_items(&self, syntax: &SyntaxNode) -> BTreeSet<MatchSetItem> {
         let mut set = BTreeSet::new();
         for child in syntax.children.iter() {
             match child.kind {

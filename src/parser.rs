@@ -35,6 +35,7 @@ pub struct Parser {
 }
 
 impl Parser {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(pattern: &str) -> Result<SyntaxNode, String> {
         let mut parser = Parser {
             stream: pattern
