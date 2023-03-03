@@ -5,6 +5,19 @@ use std::vec::IntoIter;
 // https://stackoverflow.com/questions/265457/regex-bnf-grammar
 // https://www2.cs.sfu.ca/~cameron/Teaching/384/99-3/regexp-plg.html
 
+// syntax (like BNF)
+//
+// root      = union
+// union     = concat ( '|' concat ) +
+// concat    = ( basic ) +
+// basic     = element ( '*?' | '*' | '+?' | '+' | '?' | '{' repeat '}' ) ?
+// repeat    = number ',' number ? | ',' ? number
+// element   = '(' group ')' | '[' set ']' | '.' | '^' | '$' | char
+// group     = root
+// set       = '^' ? set-items
+// set-items = ( set-item ) +
+// set-item  = char ( '-' char ) ?
+
 const META_CHARS: [char; 12] = ['(', ')', '|', '*', '+', '?', '.', '[', ']', '^', '-', '$'];
 
 #[derive(Debug, PartialEq)]
@@ -15,6 +28,10 @@ pub enum SyntaxKind {
     LongestPlus,            // a '+'
     ShortestStar,           // a '*?'
     ShortestPlus,           // a '+?'
+    Repeat(u32),            // a '{' 10 '}'
+    RepeatMin(u32),         // a '{' 1 ','    '}'
+    RepeatMax(u32),         // a '{'   ',' 10 '}'
+    RepeatRange(u32, u32),  // a '{' 1 ',' 10 '}'
     Option,                 // a '?'
     MatchAny,               // '.'
     Match(char),            // a
@@ -156,7 +173,51 @@ impl Parser {
                     children: vec![node],
                 })
             }
+            Some('{') => self.parse_repeat(node),
             _ => Ok(node),
+        }
+    }
+
+    fn parse_repeat(&mut self, node: SyntaxNode) -> Result<SyntaxNode, String> {
+        self.stream.next(); // consume '{'
+
+        let start = self.parse_number().unwrap_or(0);
+        if self.stream.next_if_eq(&'}').is_some() {
+            return Ok(SyntaxNode {
+                kind: SyntaxKind::Repeat(start),
+                children: vec![node],
+            });
+        }
+
+        if self.stream.next_if_eq(&',').is_none() {
+            match self.stream.next() {
+                Some(c) => {
+                    return Err(format!("repeat operator want ',', get {}", c));
+                }
+                _ => {
+                    return Err("repeat operator want ',', get EOL".to_owned());
+                }
+            }
+        }
+
+        let end = self.parse_number().unwrap_or(u32::MAX);
+        if start > end {
+            return Err(format!("out of repeat order {{{},{}}}", start, end));
+        }
+
+        let kind = match (start, end) {
+            (0, _) => SyntaxKind::RepeatMax(end),
+            (_, u32::MAX) => SyntaxKind::RepeatMin(start),
+            _ => SyntaxKind::RepeatRange(start, end),
+        };
+
+        match self.stream.next() {
+            Some('}') => Ok(SyntaxNode {
+                kind: kind,
+                children: vec![node],
+            }),
+            Some(c) => Err(format!("unmatched opening curly brackes, get '{}'", c)),
+            _ => Err("unmatched opening curly brackes, get EOL".to_owned()),
         }
     }
 
@@ -324,6 +385,19 @@ impl Parser {
                 }
             }
             _ => Err("escape sequence is empty".to_owned()),
+        }
+    }
+
+    fn parse_number(&mut self) -> Option<u32> {
+        let mut num = String::new();
+        while let Some(c) = self.stream.next_if(|c| c.is_digit(10)) {
+            num.push(c);
+        }
+
+        if num.is_empty() {
+            None
+        } else {
+            Some(num.parse().unwrap())
         }
     }
 }
@@ -655,6 +729,183 @@ mod tests {
                     make1(SyntaxKind::Match('a')),
                     make2(SyntaxKind::Option, vec![make1(SyntaxKind::Match('b'))]),
                 ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+    }
+
+    #[test]
+    fn repeat() {
+        {
+            let src = "a{10}";
+            let expect = Ok(make2(
+                SyntaxKind::Repeat(10),
+                vec![make1(SyntaxKind::Match('a'))],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "abc{10}";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match('b')),
+                    make2(SyntaxKind::Repeat(10), vec![make1(SyntaxKind::Match('c'))]),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "(abc){10}";
+            let expect = Ok(make2(
+                SyntaxKind::Repeat(10),
+                vec![make2(
+                    SyntaxKind::Group,
+                    vec![
+                        make1(SyntaxKind::Match('a')),
+                        make1(SyntaxKind::Match('b')),
+                        make1(SyntaxKind::Match('c')),
+                    ],
+                )],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+    }
+
+    #[test]
+    fn repeat_min() {
+        {
+            let src = "a{1,}";
+            let expect = Ok(make2(
+                SyntaxKind::RepeatMin(1),
+                vec![make1(SyntaxKind::Match('a'))],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "abc{1,}";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match('b')),
+                    make2(
+                        SyntaxKind::RepeatMin(1),
+                        vec![make1(SyntaxKind::Match('c'))],
+                    ),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "(abc){1,}";
+            let expect = Ok(make2(
+                SyntaxKind::RepeatMin(1),
+                vec![make2(
+                    SyntaxKind::Group,
+                    vec![
+                        make1(SyntaxKind::Match('a')),
+                        make1(SyntaxKind::Match('b')),
+                        make1(SyntaxKind::Match('c')),
+                    ],
+                )],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+    }
+
+    #[test]
+    fn repeat_max() {
+        {
+            let src = "a{,10}";
+            let expect = Ok(make2(
+                SyntaxKind::RepeatMax(10),
+                vec![make1(SyntaxKind::Match('a'))],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "abc{,10}";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match('b')),
+                    make2(
+                        SyntaxKind::RepeatMax(10),
+                        vec![make1(SyntaxKind::Match('c'))],
+                    ),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "(abc){,10}";
+            let expect = Ok(make2(
+                SyntaxKind::RepeatMax(10),
+                vec![make2(
+                    SyntaxKind::Group,
+                    vec![
+                        make1(SyntaxKind::Match('a')),
+                        make1(SyntaxKind::Match('b')),
+                        make1(SyntaxKind::Match('c')),
+                    ],
+                )],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+    }
+
+    #[test]
+    fn repeat_range() {
+        {
+            let src = "a{1,10}";
+            let expect = Ok(make2(
+                SyntaxKind::RepeatRange(1, 10),
+                vec![make1(SyntaxKind::Match('a'))],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "abc{1,10}";
+            let expect = Ok(make2(
+                SyntaxKind::Group,
+                vec![
+                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match('b')),
+                    make2(
+                        SyntaxKind::RepeatRange(1, 10),
+                        vec![make1(SyntaxKind::Match('c'))],
+                    ),
+                ],
+            ));
+
+            assert_eq!(run(src), expect);
+        }
+        {
+            let src = "(abc){1,10}";
+            let expect = Ok(make2(
+                SyntaxKind::RepeatRange(1, 10),
+                vec![make2(
+                    SyntaxKind::Group,
+                    vec![
+                        make1(SyntaxKind::Match('a')),
+                        make1(SyntaxKind::Match('b')),
+                        make1(SyntaxKind::Match('c')),
+                    ],
+                )],
             ));
 
             assert_eq!(run(src), expect);
