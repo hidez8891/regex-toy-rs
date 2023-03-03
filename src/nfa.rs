@@ -78,8 +78,10 @@ impl Generator {
         match syntax.kind {
             SyntaxKind::Group => self.make_group(syntax, dst_id),
             SyntaxKind::Union => self.make_union(syntax, dst_id),
-            SyntaxKind::ManyStar => self.make_many_star(syntax, dst_id),
-            SyntaxKind::ManyPlus => self.make_many_plus(syntax, dst_id),
+            SyntaxKind::LongestStar => self.make_long_star(syntax, dst_id),
+            SyntaxKind::LongestPlus => self.make_long_plus(syntax, dst_id),
+            SyntaxKind::ShortestStar => self.make_short_star(syntax, dst_id),
+            SyntaxKind::ShortestPlus => self.make_short_plus(syntax, dst_id),
             SyntaxKind::Option => self.make_option(syntax, dst_id),
             SyntaxKind::MatchAny => self.make_match_any(dst_id),
             SyntaxKind::MatchSOL => self.make_match_sol(dst_id),
@@ -114,7 +116,7 @@ impl Generator {
         node_id
     }
 
-    fn make_many_star(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
+    fn make_long_star(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let loop_id = self.nodes.len();
         self.nodes.push(Node { nexts: vec![] });
 
@@ -131,7 +133,7 @@ impl Generator {
         loop_id
     }
 
-    fn make_many_plus(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
+    fn make_long_plus(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
         let loop_id = self.nodes.len();
         self.nodes.push(Node { nexts: vec![] });
 
@@ -145,6 +147,41 @@ impl Generator {
             action: EdgeAction::Asap,
             next_id: dst_id,
         });
+        match_id
+    }
+
+    fn make_short_star(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
+        let loop_id = self.nodes.len();
+        self.nodes.push(Node {
+            nexts: vec![Edge {
+                action: EdgeAction::Asap,
+                next_id: dst_id,
+            }],
+        });
+
+        let match_id = self.make_root(&syntax.children[0], loop_id);
+        self.nodes[loop_id].nexts.push(Edge {
+            action: EdgeAction::Asap,
+            next_id: match_id,
+        });
+        loop_id
+    }
+
+    fn make_short_plus(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
+        let loop_id = self.nodes.len();
+        self.nodes.push(Node {
+            nexts: vec![Edge {
+                action: EdgeAction::Asap,
+                next_id: dst_id,
+            }],
+        });
+
+        let match_id = self.make_root(&syntax.children[0], loop_id);
+        self.nodes[loop_id].nexts.push(Edge {
+            action: EdgeAction::Asap,
+            next_id: match_id,
+        });
+
         match_id
     }
 
@@ -457,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn many_star() {
+    fn long_star() {
         {
             let src = "ab*c";
             let nfa = run(src);
@@ -509,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn many_plus() {
+    fn long_plus() {
         {
             let src = "ab+c";
             let nfa = run(src);
@@ -552,6 +589,107 @@ mod tests {
             assert_eq!(nfa.is_match("axb"), Some("axb"));
             assert_eq!(nfa.is_match("axbaxb"), Some("axbaxb"));
             assert_eq!(nfa.is_match("axaxbxb"), Some("axaxbxb"));
+            assert_eq!(nfa.is_match("baxb"), Some("axb"));
+            assert_eq!(nfa.is_match("axbz"), Some("axb"));
+        }
+    }
+
+    #[test]
+    fn short_star() {
+        {
+            let src = "ab*?c";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("ac"), Some("ac"));
+            assert_eq!(nfa.is_match("abc"), Some("abc"));
+            assert_eq!(nfa.is_match("abbc"), Some("abbc"));
+            assert_eq!(nfa.is_match("abbbc"), Some("abbbc"));
+            assert_eq!(nfa.is_match("az"), None);
+            assert_eq!(nfa.is_match("zac"), Some("ac"));
+            assert_eq!(nfa.is_match("acz"), Some("ac"));
+        }
+        {
+            let src = "ab*?";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("a"), Some("a"));
+            assert_eq!(nfa.is_match("ab"), Some("a"));
+            assert_eq!(nfa.is_match("abb"), Some("a"));
+            assert_eq!(nfa.is_match("abbb"), Some("a"));
+            assert_eq!(nfa.is_match("b"), None);
+            assert_eq!(nfa.is_match("za"), Some("a"));
+            assert_eq!(nfa.is_match("az"), Some("a"));
+        }
+        {
+            let src = "ab*?b*?";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("a"), Some("a"));
+            assert_eq!(nfa.is_match("ab"), Some("a"));
+            assert_eq!(nfa.is_match("abb"), Some("a"));
+            assert_eq!(nfa.is_match("abbb"), Some("a"));
+            assert_eq!(nfa.is_match("b"), None);
+            assert_eq!(nfa.is_match("za"), Some("a"));
+            assert_eq!(nfa.is_match("az"), Some("a"));
+        }
+        {
+            let src = "a.*?b";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("ab"), Some("ab"));
+            assert_eq!(nfa.is_match("axb"), Some("axb"));
+            assert_eq!(nfa.is_match("axbaxb"), Some("axb"));
+            #[rustfmt::skip]
+            assert_eq!(nfa.is_match("axaxbxb"), Some("axaxb"));
+            assert_eq!(nfa.is_match("baxb"), Some("axb"));
+            assert_eq!(nfa.is_match("axbz"), Some("axb"));
+        }
+    }
+
+    #[test]
+    fn short_plus() {
+        {
+            let src = "ab+?c";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("abc"), Some("abc"));
+            assert_eq!(nfa.is_match("abbc"), Some("abbc"));
+            assert_eq!(nfa.is_match("abbbc"), Some("abbbc"));
+            assert_eq!(nfa.is_match("ac"), None);
+            assert_eq!(nfa.is_match("zabc"), Some("abc"));
+            assert_eq!(nfa.is_match("abcz"), Some("abc"));
+        }
+        {
+            let src = "ab+?";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("ab"), Some("ab"));
+            assert_eq!(nfa.is_match("abb"), Some("ab"));
+            assert_eq!(nfa.is_match("abbb"), Some("ab"));
+            assert_eq!(nfa.is_match("a"), None);
+            assert_eq!(nfa.is_match("zab"), Some("ab"));
+            assert_eq!(nfa.is_match("abz"), Some("ab"));
+        }
+        {
+            let src = "ab+?b+?";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("abb"), Some("abb"));
+            assert_eq!(nfa.is_match("abbb"), Some("abb"));
+            assert_eq!(nfa.is_match("abbbb"), Some("abb"));
+            assert_eq!(nfa.is_match("a"), None);
+            assert_eq!(nfa.is_match("ab"), None);
+            assert_eq!(nfa.is_match("zabb"), Some("abb"));
+            assert_eq!(nfa.is_match("abbz"), Some("abb"));
+        }
+        {
+            let src = "a.+?b";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("ab"), None);
+            assert_eq!(nfa.is_match("axb"), Some("axb"));
+            assert_eq!(nfa.is_match("axbaxb"), Some("axb"));
+            assert_eq!(nfa.is_match("axaxbxb"), Some("axaxb"));
             assert_eq!(nfa.is_match("baxb"), Some("axb"));
             assert_eq!(nfa.is_match("axbz"), Some("axb"));
         }
