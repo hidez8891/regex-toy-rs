@@ -959,6 +959,181 @@ mod tests {
                 assert_eq!(run(src), expect);
             }
         }
+
+        #[test]
+        fn option() {
+            {
+                let src = "ab??c";
+                let expect = Ok(make2(
+                    SyntaxKind::Group,
+                    vec![
+                        make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                        make2(
+                            SyntaxKind::Shortest(RepeatKind::Option),
+                            vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
+                        ),
+                        make1(SyntaxKind::Match(MatchKind::Char('c'))),
+                    ],
+                ));
+
+                assert_eq!(run(src), expect);
+            }
+            {
+                let src = "ab??";
+                let expect = Ok(make2(
+                    SyntaxKind::Group,
+                    vec![
+                        make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                        make2(
+                            SyntaxKind::Shortest(RepeatKind::Option),
+                            vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
+                        ),
+                    ],
+                ));
+
+                assert_eq!(run(src), expect);
+            }
+        }
+
+        #[cfg(test)]
+        mod repeat {
+            use super::*;
+
+            #[test]
+            fn repeat() {
+                {
+                    let src = "a{10}?";
+                    let expect = Ok(make2(
+                        SyntaxKind::Shortest(RepeatKind::Repeat(10)),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('a')))],
+                    ));
+
+                    assert_eq!(run(src), expect);
+                }
+                {
+                    let src = "abc{10}?";
+                    let expect = Ok(make2(
+                        SyntaxKind::Group,
+                        vec![
+                            make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                            make2(
+                                SyntaxKind::Shortest(RepeatKind::Repeat(10)),
+                                vec![make1(SyntaxKind::Match(MatchKind::Char('c')))],
+                            ),
+                        ],
+                    ));
+
+                    assert_eq!(run(src), expect);
+                }
+                {
+                    let src = "(abc){10}?";
+                    let expect = Ok(make2(
+                        SyntaxKind::Shortest(RepeatKind::Repeat(10)),
+                        vec![make2(
+                            SyntaxKind::Group,
+                            vec![
+                                make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                                make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                                make1(SyntaxKind::Match(MatchKind::Char('c'))),
+                            ],
+                        )],
+                    ));
+
+                    assert_eq!(run(src), expect);
+                }
+            }
+
+            #[test]
+            fn repeat_min() {
+                {
+                    let src = "a{1,}?";
+                    let expect = Ok(make2(
+                        SyntaxKind::Shortest(RepeatKind::RepeatMin(1)),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('a')))],
+                    ));
+
+                    assert_eq!(run(src), expect);
+                }
+                {
+                    let src = "abc{1,}?";
+                    let expect = Ok(make2(
+                        SyntaxKind::Group,
+                        vec![
+                            make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                            make2(
+                                SyntaxKind::Shortest(RepeatKind::RepeatMin(1)),
+                                vec![make1(SyntaxKind::Match(MatchKind::Char('c')))],
+                            ),
+                        ],
+                    ));
+
+                    assert_eq!(run(src), expect);
+                }
+                {
+                    let src = "(abc){1,}?";
+                    let expect = Ok(make2(
+                        SyntaxKind::Shortest(RepeatKind::RepeatMin(1)),
+                        vec![make2(
+                            SyntaxKind::Group,
+                            vec![
+                                make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                                make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                                make1(SyntaxKind::Match(MatchKind::Char('c'))),
+                            ],
+                        )],
+                    ));
+
+                    assert_eq!(run(src), expect);
+                }
+            }
+
+            #[test]
+            fn repeat_range() {
+                {
+                    let src = "a{1,10}?";
+                    let expect = Ok(make2(
+                        SyntaxKind::Shortest(RepeatKind::RepeatRange(1, 10)),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('a')))],
+                    ));
+
+                    assert_eq!(run(src), expect);
+                }
+                {
+                    let src = "abc{1,10}?";
+                    let expect = Ok(make2(
+                        SyntaxKind::Group,
+                        vec![
+                            make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                            make2(
+                                SyntaxKind::Shortest(RepeatKind::RepeatRange(1, 10)),
+                                vec![make1(SyntaxKind::Match(MatchKind::Char('c')))],
+                            ),
+                        ],
+                    ));
+
+                    assert_eq!(run(src), expect);
+                }
+                {
+                    let src = "(abc){1,10}?";
+                    let expect = Ok(make2(
+                        SyntaxKind::Shortest(RepeatKind::RepeatRange(1, 10)),
+                        vec![make2(
+                            SyntaxKind::Group,
+                            vec![
+                                make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                                make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                                make1(SyntaxKind::Match(MatchKind::Char('c'))),
+                            ],
+                        )],
+                    ));
+
+                    assert_eq!(run(src), expect);
+                }
+            }
+        }
     }
 
     #[cfg(test)]
