@@ -18,7 +18,9 @@ use std::vec::IntoIter;
 // set-items = ( set-item ) +
 // set-item  = char ( '-' char ) ?
 
-const META_CHARS: [char; 12] = ['(', ')', '|', '*', '+', '?', '.', '[', ']', '^', '-', '$'];
+const META_CHARS: [char; 14] = [
+    '(', ')', '|', '*', '+', '?', '.', '[', ']', '^', '-', '$', '{', '}',
+];
 
 #[derive(Debug, PartialEq)]
 pub enum SyntaxKind {
