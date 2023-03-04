@@ -18,30 +18,60 @@ use std::vec::IntoIter;
 // set-items = set-item +
 // set-item  = char ( '-' char ) ?
 
-const META_CHARS: [char; 14] = [
-    '(', ')', '|', '*', '+', '?', '.', '[', ']', '^', '-', '$', '{', '}',
+const META_CHARS: [char; 15] = [
+    '|', // union
+    '*', // aster
+    '+', // plus
+    '?', // option or -shortest
+    ',', // repeat range separator
+    '-', // set range separator
+    '^', // position Start-of-Line
+    '$', // position End-of-Line
+    '.', // any char
+    '{', '}', // repeat brackets
+    '(', ')', // group brackets
+    '[', ']', // set brackets
 ];
 
 #[derive(Debug, PartialEq)]
 pub enum SyntaxKind {
-    Group,                  // '(' abc ')'
-    Union,                  // abc '|' abc
-    LongestStar,            // a '*'
-    LongestPlus,            // a '+'
-    ShortestStar,           // a '*?'
-    ShortestPlus,           // a '+?'
-    Repeat(u32),            // a '{' 10 '}'
-    RepeatMin(u32),         // a '{' 1 ','    '}'
-    RepeatRange(u32, u32),  // a '{' 1 ',' 10 '}'
-    Option,                 // a '?'
-    MatchAny,               // '.'
-    Match(char),            // a
-    PositiveSet,            // '[' a b c ']
-    NegativeSet,            // '[^' a b c ']
-    MatchRange(char, char), // a '-' z
-    MatchSOL,               // ^
-    MatchEOL,               // $
+    Group,        // '(' abc ')'
+    Union,        // abc '|' abc
+    Set(SetKind), // '[' a b c ']'
+    Longest(RepeatKind),
+    Shortest(RepeatKind),
+    Match(MatchKind),
+    Pos(PosKind),
     None,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SetKind {
+    Positive, // "[" abc "]"
+    Negative, // "[^" abc "]"
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RepeatKind {
+    Star,                  // a '*'
+    Plus,                  // a '+'
+    Repeat(u32),           // a '{' 10 '}'
+    RepeatMin(u32),        // a '{' 1 ','    '}'
+    RepeatRange(u32, u32), // a '{' 1 ',' 10 '}'
+    Option,                // a '?'
+}
+
+#[derive(Debug, PartialEq)]
+pub enum MatchKind {
+    Any,               // '.'
+    Char(char),        // a
+    Range(char, char), // a '-' z
+}
+
+#[derive(Debug, PartialEq)]
+pub enum PosKind {
+    SOL, // '^'
+    EOL, // '$'
 }
 
 #[derive(Debug, PartialEq)]
@@ -140,46 +170,61 @@ impl Parser {
         match self.stream.peek() {
             Some('*') => {
                 self.stream.next();
-                if self.stream.next_if_eq(&'?').is_some() {
-                    Ok(SyntaxNode {
-                        kind: SyntaxKind::ShortestStar,
-                        children: vec![node],
-                    })
-                } else {
-                    Ok(SyntaxNode {
-                        kind: SyntaxKind::LongestStar,
-                        children: vec![node],
-                    })
-                }
+
+                let kind = match self.stream.next_if_eq(&'?') {
+                    Some(_) => SyntaxKind::Shortest(RepeatKind::Star),
+                    None => SyntaxKind::Longest(RepeatKind::Star),
+                };
+
+                Ok(SyntaxNode {
+                    kind,
+                    children: vec![node],
+                })
             }
             Some('+') => {
                 self.stream.next();
-                if self.stream.next_if_eq(&'?').is_some() {
-                    Ok(SyntaxNode {
-                        kind: SyntaxKind::ShortestPlus,
-                        children: vec![node],
-                    })
-                } else {
-                    Ok(SyntaxNode {
-                        kind: SyntaxKind::LongestPlus,
-                        children: vec![node],
-                    })
-                }
+
+                let kind = match self.stream.next_if_eq(&'?') {
+                    Some(_) => SyntaxKind::Shortest(RepeatKind::Plus),
+                    None => SyntaxKind::Longest(RepeatKind::Plus),
+                };
+
+                Ok(SyntaxNode {
+                    kind,
+                    children: vec![node],
+                })
             }
             Some('?') => {
                 self.stream.next();
 
+                let kind = match self.stream.next_if_eq(&'?') {
+                    Some(_) => SyntaxKind::Shortest(RepeatKind::Option),
+                    None => SyntaxKind::Longest(RepeatKind::Option),
+                };
+
                 Ok(SyntaxNode {
-                    kind: SyntaxKind::Option,
+                    kind,
                     children: vec![node],
                 })
             }
-            Some('{') => self.parse_repeat(node),
+            Some('{') => {
+                let repeat_kind = self.parse_repeat_kind()?;
+
+                let kind = match self.stream.next_if_eq(&'?') {
+                    Some(_) => SyntaxKind::Shortest(repeat_kind),
+                    None => SyntaxKind::Longest(repeat_kind),
+                };
+
+                Ok(SyntaxNode {
+                    kind,
+                    children: vec![node],
+                })
+            }
             _ => Ok(node),
         }
     }
 
-    fn parse_repeat(&mut self, node: SyntaxNode) -> Result<SyntaxNode, String> {
+    fn parse_repeat_kind(&mut self) -> Result<RepeatKind, String> {
         self.stream.next(); // consume '{'
 
         let start = self
@@ -187,10 +232,7 @@ impl Parser {
             .ok_or("repeat count is empty".to_owned())?;
 
         if self.stream.next_if_eq(&'}').is_some() {
-            return Ok(SyntaxNode {
-                kind: SyntaxKind::Repeat(start),
-                children: vec![node],
-            });
+            return Ok(RepeatKind::Repeat(start));
         }
 
         if self.stream.next_if_eq(&',').is_none() {
@@ -209,16 +251,13 @@ impl Parser {
             return Err(format!("out of repeat order {{{},{}}}", start, end));
         }
 
-        let kind = match (start, end) {
-            (_, u32::MAX) => SyntaxKind::RepeatMin(start),
-            _ => SyntaxKind::RepeatRange(start, end),
+        let repeat_kind = match (start, end) {
+            (_, u32::MAX) => RepeatKind::RepeatMin(start),
+            _ => RepeatKind::RepeatRange(start, end),
         };
 
         match self.stream.next() {
-            Some('}') => Ok(SyntaxNode {
-                kind: kind,
-                children: vec![node],
-            }),
+            Some('}') => Ok(repeat_kind),
             Some(c) => Err(format!("unmatched opening curly brackes, get '{}'", c)),
             _ => Err("unmatched opening curly brackes, get EOL".to_owned()),
         }
@@ -253,22 +292,20 @@ impl Parser {
     fn parse_set(&mut self) -> Result<SyntaxNode, String> {
         self.stream.next(); // consume '['
 
-        let is_negative = self.stream.next_if_eq(&'^').is_some();
+        let is_positive = self.stream.next_if_eq(&'^').is_none();
         let node = self.parse_set_items()?;
 
         match self.stream.next() {
             Some(']') => {
-                if is_negative {
-                    Ok(SyntaxNode {
-                        kind: SyntaxKind::NegativeSet,
-                        children: node.children,
-                    })
-                } else {
-                    Ok(SyntaxNode {
-                        kind: SyntaxKind::PositiveSet,
-                        children: node.children,
-                    })
-                }
+                let set_kind = match is_positive {
+                    true => SetKind::Positive,
+                    false => SetKind::Negative,
+                };
+
+                Ok(SyntaxNode {
+                    kind: SyntaxKind::Set(set_kind),
+                    children: node.children,
+                })
             }
             Some(c) => Err(format!("unmatched opening brackets, get '{}'", c)),
             _ => Err("unmatched opening brackets, get EOL".to_owned()),
@@ -312,13 +349,17 @@ impl Parser {
                     return Err("missing range end character".to_owned());
                 }
 
-                if let (SyntaxKind::Match(a), SyntaxKind::Match(b)) = (node.kind, rhs.kind) {
+                if let (
+                    SyntaxKind::Match(MatchKind::Char(a)),
+                    SyntaxKind::Match(MatchKind::Char(b)),
+                ) = (node.kind, rhs.kind)
+                {
                     if a > b {
                         return Err(format!("out of range order [{}-{}]", a, b));
                     }
 
                     Ok(SyntaxNode {
-                        kind: SyntaxKind::MatchRange(a, b),
+                        kind: SyntaxKind::Match(MatchKind::Range(a, b)),
                         children: vec![],
                     })
                 } else {
@@ -333,7 +374,7 @@ impl Parser {
         self.stream.next(); // consume '.'
 
         Ok(SyntaxNode {
-            kind: SyntaxKind::MatchAny,
+            kind: SyntaxKind::Match(MatchKind::Any),
             children: vec![],
         })
     }
@@ -342,7 +383,7 @@ impl Parser {
         self.stream.next(); // consume '^'
 
         Ok(SyntaxNode {
-            kind: SyntaxKind::MatchSOL,
+            kind: SyntaxKind::Pos(PosKind::SOL),
             children: vec![],
         })
     }
@@ -351,7 +392,7 @@ impl Parser {
         self.stream.next(); // consume '$'
 
         Ok(SyntaxNode {
-            kind: SyntaxKind::MatchEOL,
+            kind: SyntaxKind::Pos(PosKind::EOL),
             children: vec![],
         })
     }
@@ -362,7 +403,7 @@ impl Parser {
             Some(c) if !META_CHARS.contains(c) => {
                 let c = self.stream.next().unwrap();
                 Ok(SyntaxNode {
-                    kind: SyntaxKind::Match(c),
+                    kind: SyntaxKind::Match(MatchKind::Char(c)),
                     children: vec![],
                 })
             }
@@ -380,7 +421,7 @@ impl Parser {
             Some(c) => {
                 if META_CHARS.contains(&c) {
                     Ok(SyntaxNode {
-                        kind: SyntaxKind::Match(c),
+                        kind: SyntaxKind::Match(MatchKind::Char(c)),
                         children: vec![],
                     })
                 } else {
@@ -430,9 +471,9 @@ mod tests {
         let expect = Ok(make2(
             SyntaxKind::Group,
             vec![
-                make1(SyntaxKind::Match('a')),
-                make1(SyntaxKind::Match('b')),
-                make1(SyntaxKind::Match('c')),
+                make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                make1(SyntaxKind::Match(MatchKind::Char('c'))),
             ],
         ));
 
@@ -445,9 +486,9 @@ mod tests {
         let expect = Ok(make2(
             SyntaxKind::Group,
             vec![
-                make1(SyntaxKind::Match('a')),
-                make1(SyntaxKind::Match('+')),
-                make1(SyntaxKind::Match('c')),
+                make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                make1(SyntaxKind::Match(MatchKind::Char('+'))),
+                make1(SyntaxKind::Match(MatchKind::Char('c'))),
             ],
         ));
 
@@ -461,9 +502,9 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
-                    make1(SyntaxKind::MatchAny),
-                    make1(SyntaxKind::Match('c')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make1(SyntaxKind::Match(MatchKind::Any)),
+                    make1(SyntaxKind::Match(MatchKind::Char('c'))),
                 ],
             ));
 
@@ -473,7 +514,10 @@ mod tests {
             let src = "a.";
             let expect = Ok(make2(
                 SyntaxKind::Group,
-                vec![make1(SyntaxKind::Match('a')), make1(SyntaxKind::MatchAny)],
+                vec![
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make1(SyntaxKind::Match(MatchKind::Any)),
+                ],
             ));
 
             assert_eq!(run(src), expect);
@@ -486,9 +530,9 @@ mod tests {
         let expect = Ok(make2(
             SyntaxKind::Group,
             vec![
-                make1(SyntaxKind::MatchSOL),
-                make1(SyntaxKind::Match('a')),
-                make1(SyntaxKind::Match('b')),
+                make1(SyntaxKind::Pos(PosKind::SOL)),
+                make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                make1(SyntaxKind::Match(MatchKind::Char('b'))),
             ],
         ));
 
@@ -501,9 +545,9 @@ mod tests {
         let expect = Ok(make2(
             SyntaxKind::Group,
             vec![
-                make1(SyntaxKind::Match('a')),
-                make1(SyntaxKind::Match('b')),
-                make1(SyntaxKind::MatchEOL),
+                make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                make1(SyntaxKind::Pos(PosKind::EOL)),
             ],
         ));
 
@@ -517,12 +561,15 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
                     make2(
                         SyntaxKind::Group,
-                        vec![make1(SyntaxKind::Match('b')), make1(SyntaxKind::Match('c'))],
+                        vec![
+                            make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('c'))),
+                        ],
                     ),
-                    make1(SyntaxKind::Match('d')),
+                    make1(SyntaxKind::Match(MatchKind::Char('d'))),
                 ],
             ));
 
@@ -533,10 +580,13 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
                     make2(
                         SyntaxKind::Group,
-                        vec![make1(SyntaxKind::Match('b')), make1(SyntaxKind::Match('c'))],
+                        vec![
+                            make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('c'))),
+                        ],
                     ),
                 ],
             ));
@@ -554,25 +604,25 @@ mod tests {
                 make2(
                     SyntaxKind::Group,
                     vec![
-                        make1(SyntaxKind::Match('a')),
-                        make1(SyntaxKind::Match('b')),
-                        make1(SyntaxKind::Match('c')),
+                        make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('c'))),
                     ],
                 ),
                 make2(
                     SyntaxKind::Group,
                     vec![
-                        make1(SyntaxKind::Match('d')),
-                        make1(SyntaxKind::Match('e')),
-                        make1(SyntaxKind::Match('f')),
+                        make1(SyntaxKind::Match(MatchKind::Char('d'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('e'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('f'))),
                     ],
                 ),
                 make2(
                     SyntaxKind::Group,
                     vec![
-                        make1(SyntaxKind::Match('g')),
-                        make1(SyntaxKind::Match('h')),
-                        make1(SyntaxKind::Match('i')),
+                        make1(SyntaxKind::Match(MatchKind::Char('g'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('h'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('i'))),
                     ],
                 ),
             ],
@@ -588,9 +638,12 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
-                    make2(SyntaxKind::LongestStar, vec![make1(SyntaxKind::Match('b'))]),
-                    make1(SyntaxKind::Match('c')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make2(
+                        SyntaxKind::Longest(RepeatKind::Star),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
+                    ),
+                    make1(SyntaxKind::Match(MatchKind::Char('c'))),
                 ],
             ));
 
@@ -601,8 +654,11 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
-                    make2(SyntaxKind::LongestStar, vec![make1(SyntaxKind::Match('b'))]),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make2(
+                        SyntaxKind::Longest(RepeatKind::Star),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
+                    ),
                 ],
             ));
 
@@ -617,9 +673,12 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
-                    make2(SyntaxKind::LongestPlus, vec![make1(SyntaxKind::Match('b'))]),
-                    make1(SyntaxKind::Match('c')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make2(
+                        SyntaxKind::Longest(RepeatKind::Plus),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
+                    ),
+                    make1(SyntaxKind::Match(MatchKind::Char('c'))),
                 ],
             ));
 
@@ -630,8 +689,11 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
-                    make2(SyntaxKind::LongestPlus, vec![make1(SyntaxKind::Match('b'))]),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make2(
+                        SyntaxKind::Longest(RepeatKind::Plus),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
+                    ),
                 ],
             ));
 
@@ -646,12 +708,12 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
                     make2(
-                        SyntaxKind::ShortestStar,
-                        vec![make1(SyntaxKind::Match('b'))],
+                        SyntaxKind::Shortest(RepeatKind::Star),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
                     ),
-                    make1(SyntaxKind::Match('c')),
+                    make1(SyntaxKind::Match(MatchKind::Char('c'))),
                 ],
             ));
 
@@ -662,10 +724,10 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
                     make2(
-                        SyntaxKind::ShortestStar,
-                        vec![make1(SyntaxKind::Match('b'))],
+                        SyntaxKind::Shortest(RepeatKind::Star),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
                     ),
                 ],
             ));
@@ -681,12 +743,12 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
                     make2(
-                        SyntaxKind::ShortestPlus,
-                        vec![make1(SyntaxKind::Match('b'))],
+                        SyntaxKind::Shortest(RepeatKind::Plus),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
                     ),
-                    make1(SyntaxKind::Match('c')),
+                    make1(SyntaxKind::Match(MatchKind::Char('c'))),
                 ],
             ));
 
@@ -697,10 +759,10 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
                     make2(
-                        SyntaxKind::ShortestPlus,
-                        vec![make1(SyntaxKind::Match('b'))],
+                        SyntaxKind::Shortest(RepeatKind::Plus),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
                     ),
                 ],
             ));
@@ -716,9 +778,12 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
-                    make2(SyntaxKind::Option, vec![make1(SyntaxKind::Match('b'))]),
-                    make1(SyntaxKind::Match('c')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make2(
+                        SyntaxKind::Longest(RepeatKind::Option),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
+                    ),
+                    make1(SyntaxKind::Match(MatchKind::Char('c'))),
                 ],
             ));
 
@@ -729,8 +794,11 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
-                    make2(SyntaxKind::Option, vec![make1(SyntaxKind::Match('b'))]),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make2(
+                        SyntaxKind::Longest(RepeatKind::Option),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('b')))],
+                    ),
                 ],
             ));
 
@@ -743,8 +811,8 @@ mod tests {
         {
             let src = "a{10}";
             let expect = Ok(make2(
-                SyntaxKind::Repeat(10),
-                vec![make1(SyntaxKind::Match('a'))],
+                SyntaxKind::Longest(RepeatKind::Repeat(10)),
+                vec![make1(SyntaxKind::Match(MatchKind::Char('a')))],
             ));
 
             assert_eq!(run(src), expect);
@@ -754,9 +822,12 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
-                    make1(SyntaxKind::Match('b')),
-                    make2(SyntaxKind::Repeat(10), vec![make1(SyntaxKind::Match('c'))]),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                    make2(
+                        SyntaxKind::Longest(RepeatKind::Repeat(10)),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('c')))],
+                    ),
                 ],
             ));
 
@@ -765,13 +836,13 @@ mod tests {
         {
             let src = "(abc){10}";
             let expect = Ok(make2(
-                SyntaxKind::Repeat(10),
+                SyntaxKind::Longest(RepeatKind::Repeat(10)),
                 vec![make2(
                     SyntaxKind::Group,
                     vec![
-                        make1(SyntaxKind::Match('a')),
-                        make1(SyntaxKind::Match('b')),
-                        make1(SyntaxKind::Match('c')),
+                        make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('c'))),
                     ],
                 )],
             ));
@@ -785,8 +856,8 @@ mod tests {
         {
             let src = "a{1,}";
             let expect = Ok(make2(
-                SyntaxKind::RepeatMin(1),
-                vec![make1(SyntaxKind::Match('a'))],
+                SyntaxKind::Longest(RepeatKind::RepeatMin(1)),
+                vec![make1(SyntaxKind::Match(MatchKind::Char('a')))],
             ));
 
             assert_eq!(run(src), expect);
@@ -796,11 +867,11 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
-                    make1(SyntaxKind::Match('b')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make1(SyntaxKind::Match(MatchKind::Char('b'))),
                     make2(
-                        SyntaxKind::RepeatMin(1),
-                        vec![make1(SyntaxKind::Match('c'))],
+                        SyntaxKind::Longest(RepeatKind::RepeatMin(1)),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('c')))],
                     ),
                 ],
             ));
@@ -810,13 +881,13 @@ mod tests {
         {
             let src = "(abc){1,}";
             let expect = Ok(make2(
-                SyntaxKind::RepeatMin(1),
+                SyntaxKind::Longest(RepeatKind::RepeatMin(1)),
                 vec![make2(
                     SyntaxKind::Group,
                     vec![
-                        make1(SyntaxKind::Match('a')),
-                        make1(SyntaxKind::Match('b')),
-                        make1(SyntaxKind::Match('c')),
+                        make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('c'))),
                     ],
                 )],
             ));
@@ -830,8 +901,8 @@ mod tests {
         {
             let src = "a{1,10}";
             let expect = Ok(make2(
-                SyntaxKind::RepeatRange(1, 10),
-                vec![make1(SyntaxKind::Match('a'))],
+                SyntaxKind::Longest(RepeatKind::RepeatRange(1, 10)),
+                vec![make1(SyntaxKind::Match(MatchKind::Char('a')))],
             ));
 
             assert_eq!(run(src), expect);
@@ -841,11 +912,11 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
-                    make1(SyntaxKind::Match('b')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                    make1(SyntaxKind::Match(MatchKind::Char('b'))),
                     make2(
-                        SyntaxKind::RepeatRange(1, 10),
-                        vec![make1(SyntaxKind::Match('c'))],
+                        SyntaxKind::Longest(RepeatKind::RepeatRange(1, 10)),
+                        vec![make1(SyntaxKind::Match(MatchKind::Char('c')))],
                     ),
                 ],
             ));
@@ -855,13 +926,13 @@ mod tests {
         {
             let src = "(abc){1,10}";
             let expect = Ok(make2(
-                SyntaxKind::RepeatRange(1, 10),
+                SyntaxKind::Longest(RepeatKind::RepeatRange(1, 10)),
                 vec![make2(
                     SyntaxKind::Group,
                     vec![
-                        make1(SyntaxKind::Match('a')),
-                        make1(SyntaxKind::Match('b')),
-                        make1(SyntaxKind::Match('c')),
+                        make1(SyntaxKind::Match(MatchKind::Char('a'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                        make1(SyntaxKind::Match(MatchKind::Char('c'))),
                     ],
                 )],
             ));
@@ -877,12 +948,12 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
                     make2(
-                        SyntaxKind::PositiveSet,
-                        vec![make1(SyntaxKind::MatchRange('b', 'z'))],
+                        SyntaxKind::Set(SetKind::Positive),
+                        vec![make1(SyntaxKind::Match(MatchKind::Range('b', 'z')))],
                     ),
-                    make1(SyntaxKind::Match('d')),
+                    make1(SyntaxKind::Match(MatchKind::Char('d'))),
                 ],
             ));
 
@@ -891,8 +962,8 @@ mod tests {
         {
             let src = "[b-z]";
             let expect = Ok(make2(
-                SyntaxKind::PositiveSet,
-                vec![make1(SyntaxKind::MatchRange('b', 'z'))],
+                SyntaxKind::Set(SetKind::Positive),
+                vec![make1(SyntaxKind::Match(MatchKind::Range('b', 'z')))],
             ));
 
             assert_eq!(run(src), expect);
@@ -900,11 +971,11 @@ mod tests {
         {
             let src = "[bcd]";
             let expect = Ok(make2(
-                SyntaxKind::PositiveSet,
+                SyntaxKind::Set(SetKind::Positive),
                 vec![
-                    make1(SyntaxKind::Match('b')),
-                    make1(SyntaxKind::Match('c')),
-                    make1(SyntaxKind::Match('d')),
+                    make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                    make1(SyntaxKind::Match(MatchKind::Char('c'))),
+                    make1(SyntaxKind::Match(MatchKind::Char('d'))),
                 ],
             ));
 
@@ -915,16 +986,16 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
                     make2(
-                        SyntaxKind::PositiveSet,
+                        SyntaxKind::Set(SetKind::Positive),
                         vec![
-                            make1(SyntaxKind::Match('b')),
-                            make1(SyntaxKind::MatchRange('c', 'y')),
-                            make1(SyntaxKind::Match('z')),
+                            make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                            make1(SyntaxKind::Match(MatchKind::Range('c', 'y'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('z'))),
                         ],
                     ),
-                    make1(SyntaxKind::Match('d')),
+                    make1(SyntaxKind::Match(MatchKind::Char('d'))),
                 ],
             ));
 
@@ -933,8 +1004,8 @@ mod tests {
         {
             let src = "[z-z]";
             let expect = Ok(make2(
-                SyntaxKind::PositiveSet,
-                vec![make1(SyntaxKind::MatchRange('z', 'z'))],
+                SyntaxKind::Set(SetKind::Positive),
+                vec![make1(SyntaxKind::Match(MatchKind::Range('z', 'z')))],
             ));
 
             assert_eq!(run(src), expect);
@@ -952,12 +1023,12 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
                     make2(
-                        SyntaxKind::NegativeSet,
-                        vec![make1(SyntaxKind::MatchRange('b', 'z'))],
+                        SyntaxKind::Set(SetKind::Negative),
+                        vec![make1(SyntaxKind::Match(MatchKind::Range('b', 'z')))],
                     ),
-                    make1(SyntaxKind::Match('d')),
+                    make1(SyntaxKind::Match(MatchKind::Char('d'))),
                 ],
             ));
 
@@ -966,8 +1037,8 @@ mod tests {
         {
             let src = "[^b-z]";
             let expect = Ok(make2(
-                SyntaxKind::NegativeSet,
-                vec![make1(SyntaxKind::MatchRange('b', 'z'))],
+                SyntaxKind::Set(SetKind::Negative),
+                vec![make1(SyntaxKind::Match(MatchKind::Range('b', 'z')))],
             ));
 
             assert_eq!(run(src), expect);
@@ -975,11 +1046,11 @@ mod tests {
         {
             let src = "[^bcd]";
             let expect = Ok(make2(
-                SyntaxKind::NegativeSet,
+                SyntaxKind::Set(SetKind::Negative),
                 vec![
-                    make1(SyntaxKind::Match('b')),
-                    make1(SyntaxKind::Match('c')),
-                    make1(SyntaxKind::Match('d')),
+                    make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                    make1(SyntaxKind::Match(MatchKind::Char('c'))),
+                    make1(SyntaxKind::Match(MatchKind::Char('d'))),
                 ],
             ));
 
@@ -990,16 +1061,16 @@ mod tests {
             let expect = Ok(make2(
                 SyntaxKind::Group,
                 vec![
-                    make1(SyntaxKind::Match('a')),
+                    make1(SyntaxKind::Match(MatchKind::Char('a'))),
                     make2(
-                        SyntaxKind::NegativeSet,
+                        SyntaxKind::Set(SetKind::Negative),
                         vec![
-                            make1(SyntaxKind::Match('b')),
-                            make1(SyntaxKind::MatchRange('c', 'y')),
-                            make1(SyntaxKind::Match('z')),
+                            make1(SyntaxKind::Match(MatchKind::Char('b'))),
+                            make1(SyntaxKind::Match(MatchKind::Range('c', 'y'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('z'))),
                         ],
                     ),
-                    make1(SyntaxKind::Match('d')),
+                    make1(SyntaxKind::Match(MatchKind::Char('d'))),
                 ],
             ));
 
@@ -1008,8 +1079,8 @@ mod tests {
         {
             let src = "[^z-z]";
             let expect = Ok(make2(
-                SyntaxKind::NegativeSet,
-                vec![make1(SyntaxKind::MatchRange('z', 'z'))],
+                SyntaxKind::Set(SetKind::Negative),
+                vec![make1(SyntaxKind::Match(MatchKind::Range('z', 'z')))],
             ));
 
             assert_eq!(run(src), expect);
@@ -1027,41 +1098,41 @@ mod tests {
             SyntaxKind::Group,
             vec![
                 make2(
-                    SyntaxKind::LongestPlus,
+                    SyntaxKind::Longest(RepeatKind::Plus),
                     vec![make2(
-                        SyntaxKind::PositiveSet,
+                        SyntaxKind::Set(SetKind::Positive),
                         vec![
-                            make1(SyntaxKind::MatchRange('a', 'z')),
-                            make1(SyntaxKind::MatchRange('A', 'Z')),
-                            make1(SyntaxKind::MatchRange('0', '9')),
-                            make1(SyntaxKind::Match('_')),
-                            make1(SyntaxKind::Match('.')),
-                            make1(SyntaxKind::Match('+')),
-                            make1(SyntaxKind::Match('-')),
+                            make1(SyntaxKind::Match(MatchKind::Range('a', 'z'))),
+                            make1(SyntaxKind::Match(MatchKind::Range('A', 'Z'))),
+                            make1(SyntaxKind::Match(MatchKind::Range('0', '9'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('_'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('.'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('+'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('-'))),
                         ],
                     )],
                 ),
-                make1(SyntaxKind::Match('@')),
+                make1(SyntaxKind::Match(MatchKind::Char('@'))),
                 make2(
-                    SyntaxKind::LongestPlus,
+                    SyntaxKind::Longest(RepeatKind::Plus),
                     vec![make2(
-                        SyntaxKind::PositiveSet,
+                        SyntaxKind::Set(SetKind::Positive),
                         vec![
-                            make1(SyntaxKind::MatchRange('a', 'z')),
-                            make1(SyntaxKind::MatchRange('A', 'Z')),
-                            make1(SyntaxKind::MatchRange('0', '9')),
-                            make1(SyntaxKind::Match('_')),
-                            make1(SyntaxKind::Match('.')),
+                            make1(SyntaxKind::Match(MatchKind::Range('a', 'z'))),
+                            make1(SyntaxKind::Match(MatchKind::Range('A', 'Z'))),
+                            make1(SyntaxKind::Match(MatchKind::Range('0', '9'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('_'))),
+                            make1(SyntaxKind::Match(MatchKind::Char('.'))),
                         ],
                     )],
                 ),
                 make2(
-                    SyntaxKind::LongestPlus,
+                    SyntaxKind::Longest(RepeatKind::Plus),
                     vec![make2(
-                        SyntaxKind::PositiveSet,
+                        SyntaxKind::Set(SetKind::Positive),
                         vec![
-                            make1(SyntaxKind::MatchRange('a', 'z')),
-                            make1(SyntaxKind::MatchRange('A', 'Z')),
+                            make1(SyntaxKind::Match(MatchKind::Range('a', 'z'))),
+                            make1(SyntaxKind::Match(MatchKind::Range('A', 'Z'))),
                         ],
                     )],
                 ),
