@@ -82,6 +82,9 @@ impl Generator {
             SyntaxKind::LongestPlus => self.make_long_plus(syntax, dst_id),
             SyntaxKind::ShortestStar => self.make_short_star(syntax, dst_id),
             SyntaxKind::ShortestPlus => self.make_short_plus(syntax, dst_id),
+            SyntaxKind::Repeat(n) => self.make_repeat(n, syntax, dst_id),
+            SyntaxKind::RepeatMin(n) => self.make_repeat_min(n, syntax, dst_id),
+            SyntaxKind::RepeatRange(a, b) => self.make_repeat_range(a, b, syntax, dst_id),
             SyntaxKind::Option => self.make_option(syntax, dst_id),
             SyntaxKind::MatchAny => self.make_match_any(dst_id),
             SyntaxKind::MatchSOL => self.make_match_sol(dst_id),
@@ -183,6 +186,43 @@ impl Generator {
         });
 
         match_id
+    }
+
+    fn make_repeat(&mut self, count: u32, syntax: &SyntaxNode, dst_id: usize) -> usize {
+        let mut dst_id = dst_id;
+        let child = &syntax.children[0];
+        for _ in 0..count {
+            let match_id = self.make_root(child, dst_id);
+            dst_id = match_id;
+        }
+        dst_id
+    }
+
+    fn make_repeat_min(&mut self, count: u32, syntax: &SyntaxNode, dst_id: usize) -> usize {
+        let loop_id = self.make_long_star(syntax, dst_id);
+        self.make_repeat(count, syntax, loop_id)
+    }
+
+    fn make_repeat_range(
+        &mut self,
+        min: u32,
+        max: u32,
+        syntax: &SyntaxNode,
+        dst_id: usize,
+    ) -> usize {
+        let mut match_id = dst_id;
+        let child = &syntax.children[0];
+        for _ in min..max {
+            let repeat_id = self.make_root(child, match_id);
+            self.nodes[repeat_id].nexts.push(Edge {
+                action: EdgeAction::Asap,
+                next_id: dst_id,
+            });
+
+            match_id = repeat_id;
+        }
+
+        self.make_repeat(min, syntax, match_id)
     }
 
     fn make_option(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
@@ -716,6 +756,110 @@ mod tests {
             assert_eq!(nfa.is_match("b"), None);
             assert_eq!(nfa.is_match("za"), Some("a"));
             assert_eq!(nfa.is_match("az"), Some("a"));
+        }
+    }
+
+    #[test]
+    fn repeat() {
+        {
+            let src = "a{3}";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("aaa"), Some("aaa"));
+            assert_eq!(nfa.is_match("aaaaa"), Some("aaa"));
+            assert_eq!(nfa.is_match("aa"), None);
+            assert_eq!(nfa.is_match("zaaa"), Some("aaa"));
+            assert_eq!(nfa.is_match("aaaz"), Some("aaa"));
+        }
+        {
+            let src = "abc{3}";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("abccc"), Some("abccc"));
+            assert_eq!(nfa.is_match("abccccc"), Some("abccc"));
+            assert_eq!(nfa.is_match("abc"), None);
+            assert_eq!(nfa.is_match("zabccc"), Some("abccc"));
+            assert_eq!(nfa.is_match("abcccz"), Some("abccc"));
+        }
+        {
+            let src = "(abc){3}";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("abcabcabc"), Some("abcabcabc"));
+            assert_eq!(nfa.is_match("abcabc"), None);
+            assert_eq!(nfa.is_match("zabcabcabc"), Some("abcabcabc"));
+            assert_eq!(nfa.is_match("abcabcabcz"), Some("abcabcabc"));
+        }
+    }
+
+    #[test]
+    fn repeat_min() {
+        {
+            let src = "a{2,}";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("aa"), Some("aa"));
+            assert_eq!(nfa.is_match("aaa"), Some("aaa"));
+            assert_eq!(nfa.is_match("a"), None);
+            assert_eq!(nfa.is_match("zaaa"), Some("aaa"));
+            assert_eq!(nfa.is_match("aaaz"), Some("aaa"));
+        }
+        {
+            let src = "abc{2,}";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("abcc"), Some("abcc"));
+            assert_eq!(nfa.is_match("abccc"), Some("abccc"));
+            assert_eq!(nfa.is_match("abc"), None);
+            assert_eq!(nfa.is_match("zabcc"), Some("abcc"));
+            assert_eq!(nfa.is_match("abccz"), Some("abcc"));
+        }
+        {
+            let src = "(abc){2,}";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("abcabc"), Some("abcabc"));
+            assert_eq!(nfa.is_match("abcabcabc"), Some("abcabcabc"));
+            assert_eq!(nfa.is_match("abc"), None);
+            assert_eq!(nfa.is_match("zabcabc"), Some("abcabc"));
+            assert_eq!(nfa.is_match("abcabcz"), Some("abcabc"));
+        }
+    }
+
+    #[test]
+    fn repeat_range() {
+        {
+            let src = "a{2,3}";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("aa"), Some("aa"));
+            assert_eq!(nfa.is_match("aaa"), Some("aaa"));
+            assert_eq!(nfa.is_match("aaaa"), Some("aaa"));
+            assert_eq!(nfa.is_match("a"), None);
+            assert_eq!(nfa.is_match("zaa"), Some("aa"));
+            assert_eq!(nfa.is_match("aaz"), Some("aa"));
+        }
+        {
+            let src = "abc{2,3}";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("abcc"), Some("abcc"));
+            assert_eq!(nfa.is_match("abccc"), Some("abccc"));
+            assert_eq!(nfa.is_match("abcccc"), Some("abccc"));
+            assert_eq!(nfa.is_match("abc"), None);
+            assert_eq!(nfa.is_match("zabcc"), Some("abcc"));
+            assert_eq!(nfa.is_match("abccz"), Some("abcc"));
+        }
+        {
+            let src = "(abc){2,3}";
+            let nfa = run(src);
+
+            assert_eq!(nfa.is_match("abcabc"), Some("abcabc"));
+            assert_eq!(nfa.is_match("abcabcabc"), Some("abcabcabc"));
+            assert_eq!(nfa.is_match("abcabcabcabc"), Some("abcabcabc"));
+            assert_eq!(nfa.is_match("abc"), None);
+            assert_eq!(nfa.is_match("zabcabc"), Some("abcabc"));
+            assert_eq!(nfa.is_match("abcabcz"), Some("abcabc"));
         }
     }
 
