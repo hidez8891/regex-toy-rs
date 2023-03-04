@@ -9,13 +9,13 @@ use std::vec::IntoIter;
 //
 // root      = union
 // union     = concat ( '|' concat ) +
-// concat    = ( basic ) +
-// basic     = element ( '*?' | '*' | '+?' | '+' | '?' | '{' repeat '}' ) ?
-// repeat    = number ',' number ? | number
+// concat    = basic +
+// basic     = element ( ( '*' | '+' | '?' | '{' repeat '}' ) '?' ? ) ?
+// repeat    = number ( ',' number ? ) ?
 // element   = '(' group ')' | '[' set ']' | '.' | '^' | '$' | char
 // group     = root
 // set       = '^' ? set-items
-// set-items = ( set-item ) +
+// set-items = set-item +
 // set-item  = char ( '-' char ) ?
 
 const META_CHARS: [char; 14] = [
