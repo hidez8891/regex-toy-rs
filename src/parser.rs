@@ -11,7 +11,7 @@ use std::vec::IntoIter;
 // union     = concat ( '|' concat ) +
 // concat    = ( basic ) +
 // basic     = element ( '*?' | '*' | '+?' | '+' | '?' | '{' repeat '}' ) ?
-// repeat    = number ',' number ? | ',' ? number
+// repeat    = number ',' number ? | number
 // element   = '(' group ')' | '[' set ']' | '.' | '^' | '$' | char
 // group     = root
 // set       = '^' ? set-items
@@ -30,7 +30,6 @@ pub enum SyntaxKind {
     ShortestPlus,           // a '+?'
     Repeat(u32),            // a '{' 10 '}'
     RepeatMin(u32),         // a '{' 1 ','    '}'
-    RepeatMax(u32),         // a '{'   ',' 10 '}'
     RepeatRange(u32, u32),  // a '{' 1 ',' 10 '}'
     Option,                 // a '?'
     MatchAny,               // '.'
@@ -181,7 +180,10 @@ impl Parser {
     fn parse_repeat(&mut self, node: SyntaxNode) -> Result<SyntaxNode, String> {
         self.stream.next(); // consume '{'
 
-        let start = self.parse_number().unwrap_or(0);
+        let start = self
+            .parse_number()
+            .ok_or("repeat count is empty".to_owned())?;
+
         if self.stream.next_if_eq(&'}').is_some() {
             return Ok(SyntaxNode {
                 kind: SyntaxKind::Repeat(start),
@@ -206,7 +208,6 @@ impl Parser {
         }
 
         let kind = match (start, end) {
-            (0, _) => SyntaxKind::RepeatMax(end),
             (_, u32::MAX) => SyntaxKind::RepeatMin(start),
             _ => SyntaxKind::RepeatRange(start, end),
         };
@@ -808,51 +809,6 @@ mod tests {
             let src = "(abc){1,}";
             let expect = Ok(make2(
                 SyntaxKind::RepeatMin(1),
-                vec![make2(
-                    SyntaxKind::Group,
-                    vec![
-                        make1(SyntaxKind::Match('a')),
-                        make1(SyntaxKind::Match('b')),
-                        make1(SyntaxKind::Match('c')),
-                    ],
-                )],
-            ));
-
-            assert_eq!(run(src), expect);
-        }
-    }
-
-    #[test]
-    fn repeat_max() {
-        {
-            let src = "a{,10}";
-            let expect = Ok(make2(
-                SyntaxKind::RepeatMax(10),
-                vec![make1(SyntaxKind::Match('a'))],
-            ));
-
-            assert_eq!(run(src), expect);
-        }
-        {
-            let src = "abc{,10}";
-            let expect = Ok(make2(
-                SyntaxKind::Group,
-                vec![
-                    make1(SyntaxKind::Match('a')),
-                    make1(SyntaxKind::Match('b')),
-                    make2(
-                        SyntaxKind::RepeatMax(10),
-                        vec![make1(SyntaxKind::Match('c'))],
-                    ),
-                ],
-            ));
-
-            assert_eq!(run(src), expect);
-        }
-        {
-            let src = "(abc){,10}";
-            let expect = Ok(make2(
-                SyntaxKind::RepeatMax(10),
                 vec![make2(
                     SyntaxKind::Group,
                     vec![
