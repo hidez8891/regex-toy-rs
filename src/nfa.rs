@@ -1,4 +1,4 @@
-use crate::parser::{Parser, SyntaxKind, SyntaxNode};
+use crate::parser::{MatchKind, Parser, PosKind, RepeatKind, SetKind, SyntaxKind, SyntaxNode};
 use std::collections::BTreeSet;
 
 pub struct Nfa {
@@ -75,24 +75,43 @@ impl Generator {
     }
 
     fn make_root(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
-        match syntax.kind {
+        match &syntax.kind {
             SyntaxKind::Group => self.make_group(syntax, dst_id),
             SyntaxKind::Union => self.make_union(syntax, dst_id),
-            SyntaxKind::LongestStar => self.make_long_star(syntax, dst_id),
-            SyntaxKind::LongestPlus => self.make_long_plus(syntax, dst_id),
-            SyntaxKind::ShortestStar => self.make_short_star(syntax, dst_id),
-            SyntaxKind::ShortestPlus => self.make_short_plus(syntax, dst_id),
-            SyntaxKind::Repeat(n) => self.make_repeat(n, syntax, dst_id),
-            SyntaxKind::RepeatMin(n) => self.make_repeat_min(n, syntax, dst_id),
-            SyntaxKind::RepeatRange(a, b) => self.make_repeat_range(a, b, syntax, dst_id),
-            SyntaxKind::Option => self.make_option(syntax, dst_id),
-            SyntaxKind::MatchAny => self.make_match_any(dst_id),
-            SyntaxKind::MatchSOL => self.make_match_sol(dst_id),
-            SyntaxKind::MatchEOL => self.make_match_eol(dst_id),
-            SyntaxKind::Match(c) => self.make_match_char(c, dst_id),
-            SyntaxKind::PositiveSet => self.make_positive_set(syntax, dst_id),
-            SyntaxKind::NegativeSet => self.make_negative_set(syntax, dst_id),
-            _ => unreachable!(),
+            SyntaxKind::Longest(kind) => match kind {
+                RepeatKind::Star => self.make_star(syntax, true, dst_id),
+                RepeatKind::Plus => self.make_plus(syntax, true, dst_id),
+                RepeatKind::Option => self.make_option(syntax, true, dst_id),
+                RepeatKind::Repeat(n) => self.make_repeat(*n, syntax, dst_id),
+                RepeatKind::RepeatMin(n) => self.make_repeat_min(*n, syntax, true, dst_id),
+                RepeatKind::RepeatRange(a, b) => {
+                    self.make_repeat_range(*a, *b, syntax, true, dst_id)
+                }
+            },
+            SyntaxKind::Shortest(kind) => match kind {
+                RepeatKind::Star => self.make_star(syntax, false, dst_id),
+                RepeatKind::Plus => self.make_plus(syntax, false, dst_id),
+                RepeatKind::Option => self.make_option(syntax, false, dst_id),
+                RepeatKind::Repeat(n) => self.make_repeat(*n, syntax, dst_id),
+                RepeatKind::RepeatMin(n) => self.make_repeat_min(*n, syntax, false, dst_id),
+                RepeatKind::RepeatRange(a, b) => {
+                    self.make_repeat_range(*a, *b, syntax, false, dst_id)
+                }
+            },
+            SyntaxKind::Match(kind) => match kind {
+                MatchKind::Any => self.make_match_any(dst_id),
+                MatchKind::Char(c) => self.make_match_char(*c, dst_id),
+                MatchKind::Range(_, _) => unreachable!(),
+            },
+            SyntaxKind::Pos(kind) => match kind {
+                PosKind::SOL => self.make_match_sol(dst_id),
+                PosKind::EOL => self.make_match_eol(dst_id),
+            },
+            SyntaxKind::Set(kind) => match kind {
+                SetKind::Positive => self.make_positive_set(syntax, dst_id),
+                SetKind::Negative => self.make_negative_set(syntax, dst_id),
+            },
+            SyntaxKind::None => unreachable!(),
         }
     }
 
@@ -119,71 +138,56 @@ impl Generator {
         node_id
     }
 
-    fn make_long_star(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
+    fn make_star(&mut self, syntax: &SyntaxNode, is_longest: bool, dst_id: usize) -> usize {
         let loop_id = self.nodes.len();
         self.nodes.push(Node { nexts: vec![] });
 
+        if !is_longest {
+            self.nodes[loop_id].nexts.push(Edge {
+                action: EdgeAction::Asap,
+                next_id: dst_id,
+            });
+        }
+
         let match_id = self.make_root(&syntax.children[0], loop_id);
         self.nodes[loop_id].nexts.push(Edge {
             action: EdgeAction::Asap,
             next_id: match_id,
         });
 
-        self.nodes[loop_id].nexts.push(Edge {
-            action: EdgeAction::Asap,
-            next_id: dst_id,
-        });
+        if is_longest {
+            self.nodes[loop_id].nexts.push(Edge {
+                action: EdgeAction::Asap,
+                next_id: dst_id,
+            });
+        }
+
         loop_id
     }
 
-    fn make_long_plus(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
+    fn make_plus(&mut self, syntax: &SyntaxNode, is_longest: bool, dst_id: usize) -> usize {
         let loop_id = self.nodes.len();
         self.nodes.push(Node { nexts: vec![] });
 
-        let match_id = self.make_root(&syntax.children[0], loop_id);
-        self.nodes[loop_id].nexts.push(Edge {
-            action: EdgeAction::Asap,
-            next_id: match_id,
-        });
-
-        self.nodes[loop_id].nexts.push(Edge {
-            action: EdgeAction::Asap,
-            next_id: dst_id,
-        });
-        match_id
-    }
-
-    fn make_short_star(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
-        let loop_id = self.nodes.len();
-        self.nodes.push(Node {
-            nexts: vec![Edge {
+        if !is_longest {
+            self.nodes[loop_id].nexts.push(Edge {
                 action: EdgeAction::Asap,
                 next_id: dst_id,
-            }],
-        });
+            });
+        }
 
         let match_id = self.make_root(&syntax.children[0], loop_id);
         self.nodes[loop_id].nexts.push(Edge {
             action: EdgeAction::Asap,
             next_id: match_id,
         });
-        loop_id
-    }
 
-    fn make_short_plus(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
-        let loop_id = self.nodes.len();
-        self.nodes.push(Node {
-            nexts: vec![Edge {
+        if is_longest {
+            self.nodes[loop_id].nexts.push(Edge {
                 action: EdgeAction::Asap,
                 next_id: dst_id,
-            }],
-        });
-
-        let match_id = self.make_root(&syntax.children[0], loop_id);
-        self.nodes[loop_id].nexts.push(Edge {
-            action: EdgeAction::Asap,
-            next_id: match_id,
-        });
+            });
+        }
 
         match_id
     }
@@ -198,8 +202,14 @@ impl Generator {
         dst_id
     }
 
-    fn make_repeat_min(&mut self, count: u32, syntax: &SyntaxNode, dst_id: usize) -> usize {
-        let loop_id = self.make_long_star(syntax, dst_id);
+    fn make_repeat_min(
+        &mut self,
+        count: u32,
+        syntax: &SyntaxNode,
+        is_longest: bool,
+        dst_id: usize,
+    ) -> usize {
+        let loop_id = self.make_star(syntax, is_longest, dst_id);
         self.make_repeat(count, syntax, loop_id)
     }
 
@@ -208,6 +218,7 @@ impl Generator {
         min: u32,
         max: u32,
         syntax: &SyntaxNode,
+        is_longest: bool,
         dst_id: usize,
     ) -> usize {
         let mut match_id = dst_id;
@@ -225,7 +236,7 @@ impl Generator {
         self.make_repeat(min, syntax, match_id)
     }
 
-    fn make_option(&mut self, syntax: &SyntaxNode, dst_id: usize) -> usize {
+    fn make_option(&mut self, syntax: &SyntaxNode, is_longest: bool, dst_id: usize) -> usize {
         let match_id = self.make_root(&syntax.children[0], dst_id);
         self.nodes[match_id].nexts.push(Edge {
             action: EdgeAction::Asap,
@@ -308,17 +319,20 @@ impl Generator {
     fn make_set_items(&self, syntax: &SyntaxNode) -> BTreeSet<MatchSetItem> {
         let mut set = BTreeSet::new();
         for child in syntax.children.iter() {
-            match child.kind {
+            match &child.kind {
                 SyntaxKind::Group => {
                     let res = self.make_set_items(child);
                     set.extend(res.into_iter());
                 }
-                SyntaxKind::Match(c) => {
-                    set.insert(MatchSetItem::Char(c));
-                }
-                SyntaxKind::MatchRange(a, b) => {
-                    set.insert(MatchSetItem::Range(a, b));
-                }
+                SyntaxKind::Match(kind) => match kind {
+                    MatchKind::Char(c) => {
+                        set.insert(MatchSetItem::Char(*c));
+                    }
+                    MatchKind::Range(a, b) => {
+                        set.insert(MatchSetItem::Range(*a, *b));
+                    }
+                    MatchKind::Any => unreachable!(),
+                },
                 _ => unreachable!(),
             };
         }
