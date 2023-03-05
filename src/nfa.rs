@@ -892,71 +892,71 @@ mod tests {
         }
     }
 
-    #[test]
-    fn positive() {
-        {
-            let src = "a[b-z]d";
-            let nfa = run(src);
-
-            assert_eq!(nfa.is_match("abd"), Some("abd"));
-            assert_eq!(nfa.is_match("azd"), Some("azd"));
-            assert_eq!(nfa.is_match("axd"), Some("axd"));
-            assert_eq!(nfa.is_match("ad"), None);
-            assert_eq!(nfa.is_match("aad"), None);
-            assert_eq!(nfa.is_match("zabd"), Some("abd"));
-            assert_eq!(nfa.is_match("abdz"), Some("abd"));
-        }
-        {
-            let src = "[b-z]";
-            let nfa = run(src);
-
-            assert_eq!(nfa.is_match("b"), Some("b"));
-            assert_eq!(nfa.is_match("z"), Some("z"));
-            assert_eq!(nfa.is_match("x"), Some("x"));
-            assert_eq!(nfa.is_match("a"), None);
-            assert_eq!(nfa.is_match("ab"), Some("b"));
-            assert_eq!(nfa.is_match("bz"), Some("b"));
-        }
-        {
-            let src = "[bcd]";
-            let nfa = run(src);
-
-            assert_eq!(nfa.is_match("b"), Some("b"));
-            assert_eq!(nfa.is_match("c"), Some("c"));
-            assert_eq!(nfa.is_match("d"), Some("d"));
-            assert_eq!(nfa.is_match("a"), None);
-            assert_eq!(nfa.is_match("e"), None);
-            assert_eq!(nfa.is_match("ab"), Some("b"));
-            assert_eq!(nfa.is_match("bz"), Some("b"));
-        }
-        {
-            let src = "a[bc-yz]d";
-            let nfa = run(src);
-
-            assert_eq!(nfa.is_match("abd"), Some("abd"));
-            assert_eq!(nfa.is_match("azd"), Some("azd"));
-            assert_eq!(nfa.is_match("acd"), Some("acd"));
-            assert_eq!(nfa.is_match("ayd"), Some("ayd"));
-            assert_eq!(nfa.is_match("axd"), Some("axd"));
-            assert_eq!(nfa.is_match("aad"), None);
-            assert_eq!(nfa.is_match("ad"), None);
-            assert_eq!(nfa.is_match("zabd"), Some("abd"));
-            assert_eq!(nfa.is_match("abdz"), Some("abd"));
-        }
-        {
-            let src = "[z-z]";
-            let nfa = run(src);
-
-            assert_eq!(nfa.is_match("z"), Some("z"));
-            assert_eq!(nfa.is_match("a"), None);
-            assert_eq!(nfa.is_match("az"), Some("z"));
-            assert_eq!(nfa.is_match("za"), Some("z"));
-        }
-    }
-
     #[cfg(test)]
     mod set {
         use super::*;
+
+        #[test]
+        fn positive() {
+            {
+                let src = "a[b-z]d";
+                let nfa = run(src);
+
+                assert_eq!(nfa.is_match("abd"), Some("abd"));
+                assert_eq!(nfa.is_match("azd"), Some("azd"));
+                assert_eq!(nfa.is_match("axd"), Some("axd"));
+                assert_eq!(nfa.is_match("ad"), None);
+                assert_eq!(nfa.is_match("aad"), None);
+                assert_eq!(nfa.is_match("zabd"), Some("abd"));
+                assert_eq!(nfa.is_match("abdz"), Some("abd"));
+            }
+            {
+                let src = "[b-z]";
+                let nfa = run(src);
+
+                assert_eq!(nfa.is_match("b"), Some("b"));
+                assert_eq!(nfa.is_match("z"), Some("z"));
+                assert_eq!(nfa.is_match("x"), Some("x"));
+                assert_eq!(nfa.is_match("a"), None);
+                assert_eq!(nfa.is_match("ab"), Some("b"));
+                assert_eq!(nfa.is_match("bz"), Some("b"));
+            }
+            {
+                let src = "[bcd]";
+                let nfa = run(src);
+
+                assert_eq!(nfa.is_match("b"), Some("b"));
+                assert_eq!(nfa.is_match("c"), Some("c"));
+                assert_eq!(nfa.is_match("d"), Some("d"));
+                assert_eq!(nfa.is_match("a"), None);
+                assert_eq!(nfa.is_match("e"), None);
+                assert_eq!(nfa.is_match("ab"), Some("b"));
+                assert_eq!(nfa.is_match("bz"), Some("b"));
+            }
+            {
+                let src = "a[bc-yz]d";
+                let nfa = run(src);
+
+                assert_eq!(nfa.is_match("abd"), Some("abd"));
+                assert_eq!(nfa.is_match("azd"), Some("azd"));
+                assert_eq!(nfa.is_match("acd"), Some("acd"));
+                assert_eq!(nfa.is_match("ayd"), Some("ayd"));
+                assert_eq!(nfa.is_match("axd"), Some("axd"));
+                assert_eq!(nfa.is_match("aad"), None);
+                assert_eq!(nfa.is_match("ad"), None);
+                assert_eq!(nfa.is_match("zabd"), Some("abd"));
+                assert_eq!(nfa.is_match("abdz"), Some("abd"));
+            }
+            {
+                let src = "[z-z]";
+                let nfa = run(src);
+
+                assert_eq!(nfa.is_match("z"), Some("z"));
+                assert_eq!(nfa.is_match("a"), None);
+                assert_eq!(nfa.is_match("az"), Some("z"));
+                assert_eq!(nfa.is_match("za"), Some("z"));
+            }
+        }
 
         #[test]
         fn negative() {
