@@ -434,7 +434,7 @@ impl Parser {
 
     fn parse_number(&mut self) -> Option<u32> {
         let mut num = String::new();
-        while let Some(c) = self.stream.next_if(|c| c.is_digit(10)) {
+        while let Some(c) = self.stream.next_if(|c| c.is_ascii_digit()) {
             num.push(c);
         }
 
