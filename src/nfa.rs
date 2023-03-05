@@ -92,11 +92,14 @@ impl Generator {
                 RepeatKind::Star => self.make_star(syntax, false, dst_id),
                 RepeatKind::Plus => self.make_plus(syntax, false, dst_id),
                 RepeatKind::Option => self.make_option(syntax, false, dst_id),
+                RepeatKind::Repeat(n) => {
+                    eprintln!("warning: convert '{{{n}}}?' to '{{{n}}}'");
+                    self.make_repeat(*n, syntax, dst_id)
+                }
+                RepeatKind::RepeatMin(n) => self.make_repeat_min(*n, syntax, false, dst_id),
                 RepeatKind::RepeatRange(a, b) => {
                     self.make_repeat_range(*a, *b, syntax, false, dst_id)
                 }
-                RepeatKind::Repeat(_) => todo!(),
-                RepeatKind::RepeatMin(_) => todo!(),
             },
             SyntaxKind::Match(kind) => match kind {
                 MatchKind::Any => self.make_match_any(dst_id),
@@ -932,6 +935,50 @@ mod tests {
                 assert_eq!(nfa.is_match("b"), None);
                 assert_eq!(nfa.is_match("za"), Some("a"));
                 assert_eq!(nfa.is_match("az"), Some("a"));
+            }
+        }
+
+        #[test]
+        fn repeat() {
+            {
+                let src = "a{3}?";
+                let _ = run(src);
+
+                // show warning error
+            }
+        }
+
+        #[test]
+        fn repeat_min() {
+            {
+                let src = "a{2,}?";
+                let nfa = run(src);
+
+                assert_eq!(nfa.is_match("aa"), Some("aa"));
+                assert_eq!(nfa.is_match("aaa"), Some("aa"));
+                assert_eq!(nfa.is_match("a"), None);
+                assert_eq!(nfa.is_match("zaaa"), Some("aa"));
+                assert_eq!(nfa.is_match("aaaz"), Some("aa"));
+            }
+            {
+                let src = "abc{2,}?";
+                let nfa = run(src);
+
+                assert_eq!(nfa.is_match("abcc"), Some("abcc"));
+                assert_eq!(nfa.is_match("abccc"), Some("abcc"));
+                assert_eq!(nfa.is_match("abc"), None);
+                assert_eq!(nfa.is_match("zabcc"), Some("abcc"));
+                assert_eq!(nfa.is_match("abccz"), Some("abcc"));
+            }
+            {
+                let src = "(abc){2,}?";
+                let nfa = run(src);
+
+                assert_eq!(nfa.is_match("abcabc"), Some("abcabc"));
+                assert_eq!(nfa.is_match("abcabcabc"), Some("abcabc"));
+                assert_eq!(nfa.is_match("abc"), None);
+                assert_eq!(nfa.is_match("zabcabc"), Some("abcabc"));
+                assert_eq!(nfa.is_match("abcabcz"), Some("abcabc"));
             }
         }
 
