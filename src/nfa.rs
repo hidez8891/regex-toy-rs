@@ -225,10 +225,20 @@ impl Generator {
         let child = &syntax.children[0];
         for _ in min..max {
             let repeat_id = self.make_root(child, match_id);
-            self.nodes[repeat_id].nexts.push(Edge {
-                action: EdgeAction::Asap,
-                next_id: dst_id,
-            });
+            if is_longest {
+                self.nodes[repeat_id].nexts.push(Edge {
+                    action: EdgeAction::Asap,
+                    next_id: dst_id,
+                });
+            } else {
+                self.nodes[repeat_id].nexts.insert(
+                    0,
+                    Edge {
+                        action: EdgeAction::Asap,
+                        next_id: dst_id,
+                    },
+                );
+            }
 
             match_id = repeat_id;
         }
@@ -238,10 +248,20 @@ impl Generator {
 
     fn make_option(&mut self, syntax: &SyntaxNode, is_longest: bool, dst_id: usize) -> usize {
         let match_id = self.make_root(&syntax.children[0], dst_id);
-        self.nodes[match_id].nexts.push(Edge {
-            action: EdgeAction::Asap,
-            next_id: dst_id,
-        });
+        if is_longest {
+            self.nodes[match_id].nexts.push(Edge {
+                action: EdgeAction::Asap,
+                next_id: dst_id,
+            });
+        } else {
+            self.nodes[match_id].nexts.insert(
+                0,
+                Edge {
+                    action: EdgeAction::Asap,
+                    next_id: dst_id,
+                },
+            );
+        }
         match_id
     }
 
