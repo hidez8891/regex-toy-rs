@@ -144,13 +144,6 @@ impl Builder {
         let loop_id = self.nodes.len();
         self.nodes.push(Node { nexts: vec![] });
 
-        if !is_longest {
-            self.nodes[loop_id].nexts.push(Edge {
-                action: EdgeAction::Asap,
-                next_id: dst_id,
-            });
-        }
-
         let match_id = self.make_root(&syntax.children[0], loop_id);
         self.nodes[loop_id].nexts.push(Edge {
             action: EdgeAction::Asap,
@@ -162,6 +155,14 @@ impl Builder {
                 action: EdgeAction::Asap,
                 next_id: dst_id,
             });
+        } else {
+            self.nodes[loop_id].nexts.insert(
+                0,
+                Edge {
+                    action: EdgeAction::Asap,
+                    next_id: dst_id,
+                },
+            );
         }
 
         loop_id
@@ -171,13 +172,6 @@ impl Builder {
         let loop_id = self.nodes.len();
         self.nodes.push(Node { nexts: vec![] });
 
-        if !is_longest {
-            self.nodes[loop_id].nexts.push(Edge {
-                action: EdgeAction::Asap,
-                next_id: dst_id,
-            });
-        }
-
         let match_id = self.make_root(&syntax.children[0], loop_id);
         self.nodes[loop_id].nexts.push(Edge {
             action: EdgeAction::Asap,
@@ -189,6 +183,14 @@ impl Builder {
                 action: EdgeAction::Asap,
                 next_id: dst_id,
             });
+        } else {
+            self.nodes[loop_id].nexts.insert(
+                0,
+                Edge {
+                    action: EdgeAction::Asap,
+                    next_id: dst_id,
+                },
+            );
         }
 
         match_id
