@@ -8,7 +8,7 @@ pub struct Nfa {
 impl Nfa {
     pub fn new(pattern: &str) -> Result<Nfa, String> {
         let syntax = Parser::new(pattern)?;
-        let nfa = Generator::new(&syntax);
+        let nfa = Builder::build(&syntax);
         Ok(nfa)
     }
 
@@ -42,23 +42,22 @@ enum MatchSetItem {
     Range(char, char),
 }
 
-struct Generator {
+struct Builder {
     nodes: Vec<Node>,
 }
 
-impl Generator {
-    #[allow(clippy::new_ret_no_self)]
-    fn new(syntax: &SyntaxNode) -> Nfa {
-        let mut generator = Generator {
+impl Builder {
+    fn build(syntax: &SyntaxNode) -> Nfa {
+        let mut builder = Builder {
             nodes: vec![
                 Node { nexts: vec![] }, // root
                 Node { nexts: vec![] }, // submit
             ],
         };
-        generator.make(syntax);
+        builder.make(syntax);
 
         Nfa {
-            nodes: generator.nodes,
+            nodes: builder.nodes,
         }
     }
 
