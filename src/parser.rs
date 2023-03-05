@@ -167,61 +167,48 @@ impl Parser {
             return Ok(node);
         }
 
-        match self.stream.peek() {
+        let kind = match self.stream.peek() {
             Some('*') => {
                 self.stream.next();
 
-                let kind = match self.stream.next_if_eq(&'?') {
+                match self.stream.next_if_eq(&'?') {
                     Some(_) => SyntaxKind::Shortest(RepeatKind::Star),
                     None => SyntaxKind::Longest(RepeatKind::Star),
-                };
-
-                Ok(SyntaxNode {
-                    kind,
-                    children: vec![node],
-                })
+                }
             }
             Some('+') => {
                 self.stream.next();
 
-                let kind = match self.stream.next_if_eq(&'?') {
+                match self.stream.next_if_eq(&'?') {
                     Some(_) => SyntaxKind::Shortest(RepeatKind::Plus),
                     None => SyntaxKind::Longest(RepeatKind::Plus),
-                };
-
-                Ok(SyntaxNode {
-                    kind,
-                    children: vec![node],
-                })
+                }
             }
             Some('?') => {
                 self.stream.next();
 
-                let kind = match self.stream.next_if_eq(&'?') {
+                match self.stream.next_if_eq(&'?') {
                     Some(_) => SyntaxKind::Shortest(RepeatKind::Option),
                     None => SyntaxKind::Longest(RepeatKind::Option),
-                };
-
-                Ok(SyntaxNode {
-                    kind,
-                    children: vec![node],
-                })
+                }
             }
             Some('{') => {
                 let repeat_kind = self.parse_repeat_kind()?;
 
-                let kind = match self.stream.next_if_eq(&'?') {
+                match self.stream.next_if_eq(&'?') {
                     Some(_) => SyntaxKind::Shortest(repeat_kind),
                     None => SyntaxKind::Longest(repeat_kind),
-                };
-
-                Ok(SyntaxNode {
-                    kind,
-                    children: vec![node],
-                })
+                }
             }
-            _ => Ok(node),
-        }
+            _ => {
+                return Ok(node);
+            }
+        };
+
+        Ok(SyntaxNode {
+            kind,
+            children: vec![node],
+        })
     }
 
     fn parse_repeat_kind(&mut self) -> Result<RepeatKind, String> {
@@ -437,12 +424,7 @@ impl Parser {
         while let Some(c) = self.stream.next_if(|c| c.is_ascii_digit()) {
             num.push(c);
         }
-
-        if num.is_empty() {
-            None
-        } else {
-            Some(num.parse().unwrap())
-        }
+        num.parse().ok()
     }
 }
 
