@@ -112,7 +112,11 @@ impl Compiler {
         let child_size = child_insts.len() as isize;
 
         let mut insts = Vec::new();
-        insts.push(Inst::Split(1, child_size + 2));
+        if is_longest {
+            insts.push(Inst::Split(1, child_size + 2));
+        } else {
+            insts.push(Inst::Split(child_size + 2, 1));
+        }
         insts.extend(child_insts);
         insts.push(Inst::Jmp(-child_size - 1));
 
@@ -125,7 +129,11 @@ impl Compiler {
 
         let mut insts = Vec::new();
         insts.extend(child_insts);
-        insts.push(Inst::Split(-child_size, 1));
+        if is_longest {
+            insts.push(Inst::Split(-child_size, 1));
+        } else {
+            insts.push(Inst::Split(1, -child_size));
+        }
 
         insts
     }
@@ -135,7 +143,11 @@ impl Compiler {
         let child_size = child_insts.len() as isize;
 
         let mut insts = Vec::new();
-        insts.push(Inst::Split(1, child_size + 1));
+        if is_longest {
+            insts.push(Inst::Split(1, child_size + 1));
+        } else {
+            insts.push(Inst::Split(child_size + 1, 1));
+        }
         insts.extend(child_insts);
 
         insts
