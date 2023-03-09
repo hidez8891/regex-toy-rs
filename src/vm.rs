@@ -144,6 +144,7 @@ impl<'a, 'b> Executer<'a, 'b> {
                 if let Some((s_ic, s_pc)) = self.stack.pop() {
                     self.ic = s_ic;
                     self.pc = s_pc;
+                    self.is_fail = false;
                 } else {
                     return None; // unmatch
                 }
