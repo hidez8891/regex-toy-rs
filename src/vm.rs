@@ -1,4 +1,4 @@
-use crate::parser::{MatchKind, Parser, SyntaxKind, SyntaxNode};
+use crate::parser::{MatchKind, Parser, PosKind, SyntaxKind, SyntaxNode};
 
 pub struct VM {
     insts: Vec<Inst>,
@@ -56,6 +56,10 @@ impl Compiler {
                 MatchKind::Char(c) => self.compile_match_char(*c),
                 MatchKind::Range(_, _) => unreachable!(),
             },
+            SyntaxKind::Pos(kind) => match kind {
+                PosKind::SOL => self.compile_match_sol(),
+                PosKind::EOL => self.compile_match_eol(),
+            },
             SyntaxKind::None => unreachable!(),
             _ => todo!(),
         }
@@ -97,6 +101,14 @@ impl Compiler {
 
     fn compile_match_char(&self, c: char) -> Vec<Inst> {
         [Inst::Char(c)].into()
+    }
+
+    fn compile_match_sol(&self) -> Vec<Inst> {
+        [Inst::PosSOL].into()
+    }
+
+    fn compile_match_eol(&self) -> Vec<Inst> {
+        [Inst::PosEOL].into()
     }
 }
 
