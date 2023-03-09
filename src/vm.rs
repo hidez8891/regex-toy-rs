@@ -1,4 +1,4 @@
-use crate::parser::{MatchKind, Parser, PosKind, SyntaxKind, SyntaxNode};
+use crate::parser::{MatchKind, Parser, PosKind, RepeatKind, SyntaxKind, SyntaxNode};
 
 pub struct VM {
     insts: Vec<Inst>,
@@ -51,6 +51,18 @@ impl Compiler {
         match &syntax.kind {
             SyntaxKind::Group => self.compile_group(syntax),
             SyntaxKind::Union => self.compile_union(syntax),
+            SyntaxKind::Longest(kind) => match kind {
+                RepeatKind::Star => self.compile_star(syntax, true),
+                RepeatKind::Plus => self.compile_plus(syntax, true),
+                RepeatKind::Option => self.compile_option(syntax, true),
+                _ => todo!(),
+            },
+            SyntaxKind::Shortest(kind) => match kind {
+                RepeatKind::Star => self.compile_star(syntax, false),
+                RepeatKind::Plus => self.compile_plus(syntax, false),
+                RepeatKind::Option => self.compile_option(syntax, false),
+                _ => todo!(),
+            },
             SyntaxKind::Match(kind) => match kind {
                 MatchKind::Any => self.compile_match_any(),
                 MatchKind::Char(c) => self.compile_match_char(*c),
@@ -92,6 +104,40 @@ impl Compiler {
         }
 
         insts.reverse();
+        insts
+    }
+
+    fn compile_star(&self, syntax: &SyntaxNode, is_longest: bool) -> Vec<Inst> {
+        let child_insts = self.compile_root(&syntax.children[0]);
+        let child_size = child_insts.len() as isize;
+
+        let mut insts = Vec::new();
+        insts.push(Inst::Split(1, child_size + 2));
+        insts.extend(child_insts);
+        insts.push(Inst::Jmp(-child_size - 1));
+
+        insts
+    }
+
+    fn compile_plus(&self, syntax: &SyntaxNode, is_longest: bool) -> Vec<Inst> {
+        let child_insts = self.compile_root(&syntax.children[0]);
+        let child_size = child_insts.len() as isize;
+
+        let mut insts = Vec::new();
+        insts.extend(child_insts);
+        insts.push(Inst::Split(-child_size, 1));
+
+        insts
+    }
+
+    fn compile_option(&self, syntax: &SyntaxNode, is_longest: bool) -> Vec<Inst> {
+        let child_insts = self.compile_root(&syntax.children[0]);
+        let child_size = child_insts.len() as isize;
+
+        let mut insts = Vec::new();
+        insts.push(Inst::Split(1, child_size + 1));
+        insts.extend(child_insts);
+
         insts
     }
 
