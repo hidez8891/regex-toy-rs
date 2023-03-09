@@ -14,8 +14,16 @@ impl VM {
     pub fn is_match<'a>(&self, str: &'a str) -> Option<&'a str> {
         Executer::is_match(&self.insts, str)
     }
+
+    #[cfg(test)]
+    pub fn dump(&self) {
+        for inst in self.insts.iter() {
+            println!("{:?}", inst);
+        }
+    }
 }
 
+#[derive(Debug)]
 enum Inst {
     Fail,
     Match,
