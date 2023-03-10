@@ -23,7 +23,7 @@ impl VM {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Inst {
     Fail,
     Match,
@@ -55,13 +55,17 @@ impl Compiler {
                 RepeatKind::Star => self.compile_star(syntax, true),
                 RepeatKind::Plus => self.compile_plus(syntax, true),
                 RepeatKind::Option => self.compile_option(syntax, true),
-                _ => todo!(),
+                RepeatKind::Repeat(n) => self.compile_repeat(*n, syntax),
+                RepeatKind::RepeatMin(n) => self.compile_repeat_min(*n, syntax, true),
+                RepeatKind::RepeatRange(a, b) => self.compile_repeat_range(*a, *b, syntax, true),
             },
             SyntaxKind::Shortest(kind) => match kind {
                 RepeatKind::Star => self.compile_star(syntax, false),
                 RepeatKind::Plus => self.compile_plus(syntax, false),
                 RepeatKind::Option => self.compile_option(syntax, false),
-                _ => todo!(),
+                RepeatKind::Repeat(n) => self.compile_repeat(*n, syntax),
+                RepeatKind::RepeatMin(n) => self.compile_repeat_min(*n, syntax, false),
+                RepeatKind::RepeatRange(a, b) => self.compile_repeat_range(*a, *b, syntax, false),
             },
             SyntaxKind::Match(kind) => match kind {
                 MatchKind::Any => self.compile_match_any(),
@@ -151,6 +155,51 @@ impl Compiler {
         insts.extend(child_insts);
 
         insts
+    }
+
+    fn compile_repeat(&self, count: u32, syntax: &SyntaxNode) -> Vec<Inst> {
+        let child_insts = self.compile_root(&syntax.children[0]);
+
+        let mut insts = Vec::new();
+        for _ in 0..count {
+            insts.extend(child_insts.clone());
+        }
+        insts
+    }
+
+    fn compile_repeat_min(&self, count: u32, syntax: &SyntaxNode, is_longest: bool) -> Vec<Inst> {
+        let mut insts = Vec::new();
+        insts.extend(self.compile_repeat(count, syntax));
+        insts.extend(self.compile_star(syntax, is_longest));
+        insts
+    }
+
+    fn compile_repeat_range(
+        &self,
+        min: u32,
+        max: u32,
+        syntax: &SyntaxNode,
+        is_longest: bool,
+    ) -> Vec<Inst> {
+        let child_insts = self.compile_root(&syntax.children[0]);
+
+        let mut insts = Vec::new();
+        let mut dst_addr = 1;
+        for _ in min..max {
+            dst_addr += child_insts.len() as isize;
+
+            insts.extend(child_insts.iter().rev());
+            if is_longest {
+                insts.push(Inst::Split(1, dst_addr));
+            } else {
+                insts.push(Inst::Split(dst_addr, 1));
+            }
+        }
+
+        let repeat_insts = self.compile_repeat(min, syntax);
+        insts.extend(repeat_insts.into_iter().rev());
+
+        insts.into_iter().rev().collect()
     }
 
     fn compile_match_any(&self) -> Vec<Inst> {
