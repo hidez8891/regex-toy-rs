@@ -1,4 +1,4 @@
-use crate::parser::{MatchKind, Parser, PosKind, RepeatKind, SyntaxKind, SyntaxNode};
+use crate::parser::{MatchKind, Parser, PosKind, RepeatKind, SetKind, SyntaxKind, SyntaxNode};
 
 pub struct VM {
     insts: Vec<Inst>,
@@ -27,6 +27,7 @@ impl VM {
 enum Inst {
     Fail,
     Match,
+    Next,
     Jmp(isize),
     Split(isize, isize),
     Char(char),
@@ -76,8 +77,11 @@ impl Compiler {
                 PosKind::SOL => self.compile_match_sol(),
                 PosKind::EOL => self.compile_match_eol(),
             },
+            SyntaxKind::Set(kind) => match kind {
+                SetKind::Positive => self.compile_positive_set(syntax),
+                SetKind::Negative => self.compile_negative_set(syntax),
+            },
             SyntaxKind::None => unreachable!(),
-            _ => todo!(),
         }
     }
 
@@ -217,6 +221,75 @@ impl Compiler {
     fn compile_match_eol(&self) -> Vec<Inst> {
         [Inst::PosEOL].into()
     }
+
+    fn compile_positive_set(&self, syntax: &SyntaxNode) -> Vec<Inst> {
+        let mut insts = self.compile_positive_set_item(syntax, 2);
+        insts.reverse();
+        insts.push(Inst::Fail);
+        insts.push(Inst::Next);
+        insts
+    }
+
+    fn compile_positive_set_item(&self, syntax: &SyntaxNode, dst_addr: isize) -> Vec<Inst> {
+        let mut insts = Vec::new();
+        let mut dst_addr = dst_addr;
+        for child in syntax.children.iter().rev() {
+            match &child.kind {
+                SyntaxKind::Group => {
+                    let item = self.compile_positive_set_item(child, dst_addr);
+                    dst_addr += item.len() as isize;
+
+                    insts.extend(item);
+                }
+                SyntaxKind::Match(kind) => match kind {
+                    MatchKind::Char(c) => {
+                        insts.push(Inst::Jmp(dst_addr));
+                        insts.push(Inst::Include(*c, *c));
+                        insts.push(Inst::Split(1, 3));
+                        dst_addr += 3;
+                    }
+                    MatchKind::Range(a, b) => {
+                        insts.push(Inst::Jmp(dst_addr));
+                        insts.push(Inst::Include(*a, *b));
+                        insts.push(Inst::Split(1, 3));
+                        dst_addr += 3;
+                    }
+                    MatchKind::Any => unreachable!(),
+                },
+                _ => unreachable!(),
+            }
+        }
+        insts
+    }
+
+    fn compile_negative_set(&self, syntax: &SyntaxNode) -> Vec<Inst> {
+        let mut insts = self.compile_negative_set_item(syntax);
+        insts.push(Inst::Next);
+        insts
+    }
+
+    fn compile_negative_set_item(&self, syntax: &SyntaxNode) -> Vec<Inst> {
+        let mut insts = Vec::new();
+        for child in syntax.children.iter() {
+            match &child.kind {
+                SyntaxKind::Group => {
+                    let item = self.compile_negative_set_item(child);
+                    insts.extend(item);
+                }
+                SyntaxKind::Match(kind) => match kind {
+                    MatchKind::Char(c) => {
+                        insts.push(Inst::Exclude(*c, *c));
+                    }
+                    MatchKind::Range(a, b) => {
+                        insts.push(Inst::Exclude(*a, *b));
+                    }
+                    MatchKind::Any => unreachable!(),
+                },
+                _ => unreachable!(),
+            }
+        }
+        insts
+    }
 }
 
 struct Executer<'a, 'b> {
@@ -281,6 +354,11 @@ impl<'a, 'b> Executer<'a, 'b> {
                 self.is_match = true;
                 return;
             }
+            Inst::Next => {
+                self.ic += 1;
+                self.pc += 1;
+                return;
+            }
             Inst::Jmp(addr) => {
                 self.pc = self.pc.saturating_add_signed(*addr);
                 return;
@@ -322,7 +400,6 @@ impl<'a, 'b> Executer<'a, 'b> {
             Inst::Include(a, b) => {
                 if let Some(c) = self.str.chars().nth(self.ic) {
                     if *a <= c && c <= *b {
-                        self.ic += 1;
                         self.pc += 1;
                         return;
                     }
@@ -331,7 +408,6 @@ impl<'a, 'b> Executer<'a, 'b> {
             Inst::Exclude(a, b) => {
                 if let Some(c) = self.str.chars().nth(self.ic) {
                     if *a > c || c > *b {
-                        self.ic += 1;
                         self.pc += 1;
                         return;
                     }
