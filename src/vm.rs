@@ -23,7 +23,7 @@ impl VM {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Inst {
     Fail,
     Match,
@@ -101,10 +101,11 @@ impl Compiler {
 
         for child in syntax.children.iter().rev() {
             let mut child_insts = self.compile_root(child);
+            child_insts.reverse();
+
             let next_addr = child_insts.len() as isize + 2;
 
             insts.push(Inst::Jmp(dst_addr));
-            child_insts.reverse();
             insts.extend(child_insts);
             insts.push(Inst::Split(1, next_addr));
 
@@ -185,14 +186,15 @@ impl Compiler {
         syntax: &SyntaxNode,
         is_longest: bool,
     ) -> Vec<Inst> {
-        let child_insts = self.compile_root(&syntax.children[0]);
+        let mut child_insts = self.compile_root(&syntax.children[0]);
+        child_insts.reverse();
 
         let mut insts = Vec::new();
         let mut dst_addr = 1;
         for _ in min..max {
             dst_addr += child_insts.len() as isize;
 
-            insts.extend(child_insts.iter().rev());
+            insts.extend(child_insts.clone());
             if is_longest {
                 insts.push(Inst::Split(1, dst_addr));
             } else {
@@ -200,10 +202,12 @@ impl Compiler {
             }
         }
 
-        let repeat_insts = self.compile_repeat(min, syntax);
-        insts.extend(repeat_insts.into_iter().rev());
+        let mut repeat_insts = self.compile_repeat(min, syntax);
+        repeat_insts.reverse();
+        insts.extend(repeat_insts);
 
-        insts.into_iter().rev().collect()
+        insts.reverse();
+        insts
     }
 
     fn compile_match_any(&self) -> Vec<Inst> {
