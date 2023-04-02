@@ -126,7 +126,7 @@ mod tests {
     }
 
     #[cfg(test)]
-    mod longest {
+    mod greedy {
         use super::*;
 
         #[test]
@@ -360,7 +360,7 @@ mod tests {
     }
 
     #[cfg(test)]
-    mod shortest {
+    mod non_greedy {
         use super::*;
 
         #[test]
