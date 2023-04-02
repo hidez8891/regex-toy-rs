@@ -15,8 +15,8 @@
 // set-items = set-item +
 // set-item  = char ( '-' char ) ?
 
-mod ast;
-mod parser;
+pub mod ast;
+pub mod parser;
 
 #[cfg(test)]
 mod tests {
