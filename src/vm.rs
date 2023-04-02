@@ -582,8 +582,6 @@ mod tests {
                 let src = "a[b-z]d";
                 let vm = run(src);
 
-                vm.dump();
-
                 assert_eq!(vm.is_match("abd"), Some("abd"));
                 assert_eq!(vm.is_match("azd"), Some("azd"));
                 assert_eq!(vm.is_match("axd"), Some("axd"));
