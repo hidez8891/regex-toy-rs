@@ -16,7 +16,10 @@
 // set-item  = char ( '-' char ) ?
 
 pub mod ast;
-pub mod parser;
+mod parser;
+
+pub use ast::Ast;
+pub use parser::Parser;
 
 #[cfg(test)]
 mod tests {

@@ -1,4 +1,4 @@
-use crate::parser::parser::Parser;
+use crate::parser::Parser;
 
 use super::compile::Compiler;
 use super::exec::Executer;

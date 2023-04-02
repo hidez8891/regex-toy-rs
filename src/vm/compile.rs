@@ -1,6 +1,6 @@
 use crate::parser::{
-    ast::{Ast, AstKind, GreedyKind, MatchKind, PositionKind, RepeatKind},
-    parser::Parser,
+    ast::{AstKind, GreedyKind, MatchKind, PositionKind, RepeatKind},
+    Ast, Parser,
 };
 
 use super::inst::Inst;

@@ -3,6 +3,8 @@ mod exec;
 mod inst;
 mod vm;
 
+pub use vm::Vm;
+
 #[cfg(test)]
 mod tests {
     use super::vm::*;
