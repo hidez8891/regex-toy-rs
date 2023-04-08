@@ -1,4 +1,5 @@
 use std::iter::Peekable;
+use std::num::ParseIntError;
 use std::vec::IntoIter;
 
 use super::ast::*;
@@ -32,338 +33,434 @@ impl Parser {
                 .peekable(),
         };
 
-        let ast = parser.parse_root()?;
+        let ast = parser.parse_concat()?;
         match parser.stream.next() {
             Some(c) => Err(format!("parse is failed: {}", c)),
             None => Ok(ast),
         }
     }
 
-    fn parse_root(&mut self) -> Result<Ast, String> {
-        self.parse_union()
-    }
-
-    fn parse_union(&mut self) -> Result<Ast, String> {
-        let ast = self.parse_concat()?;
-        if ast.kind == AstKind::None {
-            return Ok(ast);
-        }
-
-        match self.stream.peek() {
-            Some('|') => {
-                let mut children = vec![ast];
-
-                while let Some('|') = self.stream.peek() {
-                    self.stream.next();
-
-                    let rhs = self.parse_concat()?;
-                    if rhs.kind == AstKind::None {
-                        return Err("missing right term of the union operator".to_owned());
-                    }
-                    children.push(rhs);
-                }
-
-                Ok(Ast {
-                    kind: AstKind::Union,
-                    children,
-                })
-            }
-            _ => Ok(ast),
-        }
-    }
-
     fn parse_concat(&mut self) -> Result<Ast, String> {
-        let mut children = Vec::new();
+        let mut children = vec![];
+        let mut ast = None;
+
         loop {
-            let ast = self.parse_basic()?;
-
-            match ast.kind {
-                AstKind::None => break,
-                _ => {
-                    children.push(ast);
-                }
-            }
-        }
-
-        match children.len() {
-            0 => Ok(Ast {
-                kind: AstKind::None,
-                children: vec![],
-            }),
-            1 => Ok(children.pop().unwrap()),
-            _ => Ok(Ast {
-                kind: AstKind::Group,
-                children,
-            }),
-        }
-    }
-
-    fn parse_basic(&mut self) -> Result<Ast, String> {
-        let ast = self.parse_element()?;
-        if ast.kind == AstKind::None {
-            return Ok(ast);
-        }
-
-        let kind = match self.stream.peek() {
-            Some('*') => {
-                self.stream.next();
-
-                match self.stream.next_if_eq(&'?') {
-                    Some(_) => AstKind::Star(GreedyKind::NonGreedy),
-                    None => AstKind::Star(GreedyKind::Greedy),
-                }
-            }
-            Some('+') => {
-                self.stream.next();
-
-                match self.stream.next_if_eq(&'?') {
-                    Some(_) => AstKind::Plus(GreedyKind::NonGreedy),
-                    None => AstKind::Plus(GreedyKind::Greedy),
-                }
-            }
-            Some('?') => {
-                self.stream.next();
-
-                match self.stream.next_if_eq(&'?') {
-                    Some(_) => AstKind::Option(GreedyKind::NonGreedy),
-                    None => AstKind::Option(GreedyKind::Greedy),
-                }
-            }
-            Some('{') => {
-                if let AstKind::Repeat(n, m, _) = self.parse_repeat_kind()? {
-                    match self.stream.next_if_eq(&'?') {
-                        Some(_) => AstKind::Repeat(n, m, GreedyKind::NonGreedy),
-                        None => AstKind::Repeat(n, m, GreedyKind::Greedy),
+            match self.stream.peek() {
+                Some('(') => {
+                    if let Some(node) = ast {
+                        children.push(node);
                     }
-                } else {
-                    unreachable!()
+                    ast = Some(self.parse_group()?);
+                }
+                Some('[') => {
+                    if let Some(node) = ast {
+                        children.push(node);
+                    }
+                    ast = Some(self.parse_set()?);
+                }
+                Some('{') => {
+                    if ast.is_none() {
+                        return Err(format!("ERROR: repeat target is empty"));
+                    }
+                    ast = Some(self.parse_repeat(ast.unwrap())?);
+                }
+                Some('|') => {
+                    if ast.is_none() {
+                        return Err(format!("ERROR: union target is empty"));
+                    }
+
+                    children.push(ast.unwrap());
+                    let lhs = Ast {
+                        kind: AstKind::Group,
+                        children,
+                    };
+                    children = vec![];
+
+                    ast = Some(self.parse_union(lhs)?);
+                }
+                Some('*') => {
+                    if ast.is_none() {
+                        return Err(format!("ERROR: star target is empty"));
+                    }
+                    ast = Some(self.parse_star(ast.unwrap())?);
+                }
+                Some('+') => {
+                    if ast.is_none() {
+                        return Err(format!("ERROR: plus target is empty"));
+                    }
+                    ast = Some(self.parse_plus(ast.unwrap())?);
+                }
+                Some('?') => {
+                    if ast.is_none() {
+                        return Err(format!("ERROR: option target is empty"));
+                    }
+                    ast = Some(self.parse_option(ast.unwrap())?);
+                }
+                Some('^') | Some('$') => {
+                    if let Some(node) = ast {
+                        children.push(node);
+                    }
+                    ast = Some(self.parse_position()?);
+                }
+                Some('\\') => {
+                    if let Some(node) = ast {
+                        children.push(node);
+                    }
+                    ast = Some(self.parse_metachar()?);
+                }
+                Some('.') => {
+                    if let Some(node) = ast {
+                        children.push(node);
+                    }
+                    ast = Some(self.parse_any()?);
+                }
+                Some(c) if META_CHARS.contains(c) => {
+                    break; // end loop
+                }
+                Some(_) => {
+                    if let Some(node) = ast {
+                        children.push(node);
+                    }
+                    ast = Some(self.parse_char()?);
+                }
+                None => {
+                    break; // EOL, end loop
                 }
             }
-            _ => {
-                return Ok(ast);
-            }
-        };
+        }
 
-        Ok(Ast {
-            kind,
-            children: vec![ast],
-        })
+        if let Some(node) = ast {
+            children.push(node);
+        }
+
+        return Ok(Ast {
+            kind: AstKind::Group,
+            children,
+        });
     }
 
-    fn parse_repeat_kind(&mut self) -> Result<AstKind, String> {
-        use GreedyKind::*;
-        use RepeatKind::*;
+    fn parse_set_items(&mut self) -> Result<Vec<Ast>, String> {
+        let mut children = vec![];
+        let mut ast = None;
 
-        self.stream.next(); // consume '{'
-
-        let start = self
-            .parse_number()
-            .ok_or("repeat count is empty".to_owned())?;
-
-        if self.stream.next_if_eq(&'}').is_some() {
-            return Ok(AstKind::Repeat(Num(start), Num(start), Greedy));
-        }
-
-        if self.stream.next_if_eq(&',').is_none() {
-            match self.stream.next() {
-                Some(c) => {
-                    return Err(format!("repeat operator want ',', get {}", c));
+        loop {
+            match self.stream.peek() {
+                Some('\\') => {
+                    if let Some(node) = ast {
+                        children.push(node);
+                    }
+                    ast = Some(self.parse_metachar()?);
                 }
-                _ => {
-                    return Err("repeat operator want ',', get EoL".to_owned());
+                Some('-') => {
+                    if ast.is_none() {
+                        return Err(format!("ERROR: char-range start is empty"));
+                    }
+                    children.push(self.parse_char_range(ast.unwrap())?);
+                    ast = None;
+                }
+                Some(c) if META_CHARS.contains(c) => {
+                    break; // end loop
+                }
+                Some(_) => {
+                    if let Some(node) = ast {
+                        children.push(node);
+                    }
+                    ast = Some(self.parse_char()?);
+                }
+                None => {
+                    break; // EOL, end loop
                 }
             }
         }
 
-        let end = self.parse_number().unwrap_or(u32::MAX);
-        if start > end {
-            return Err(format!("out of repeat order {{{},{}}}", start, end));
+        if let Some(node) = ast {
+            children.push(node);
         }
 
-        let repeat_kind = match (start, end) {
-            (_, u32::MAX) => AstKind::Repeat(Num(start), Infinity, Greedy),
-            _ => AstKind::Repeat(Num(start), Num(end), Greedy),
-        };
-
-        match self.stream.next() {
-            Some('}') => Ok(repeat_kind),
-            Some(c) => Err(format!("unmatched opening curly brackes, get '{}'", c)),
-            _ => Err("unmatched opening curly brackes, get EoL".to_owned()),
-        }
-    }
-
-    fn parse_element(&mut self) -> Result<Ast, String> {
-        match self.stream.peek() {
-            Some('(') => self.parse_group(),
-            Some('[') => self.parse_set(),
-            Some('.') => self.parse_anychar(),
-            Some('^') => self.parse_sol(),
-            Some('$') => self.parse_eol(),
-            _ => self.parse_char(),
-        }
+        return Ok(children);
     }
 
     fn parse_group(&mut self) -> Result<Ast, String> {
-        self.stream.next(); // consume '('
-
-        let ast = self.parse_root()?;
-        if ast.kind == AstKind::None {
-            return Ok(ast);
+        if self.stream.next_if_eq(&'(').is_none() {
+            return Err(format!("ERROR: want group open token"));
         }
 
-        match self.stream.next() {
-            Some(')') => Ok(ast),
-            Some(c) => Err(format!("unmatched opening parentheses, get '{}'", c)),
-            _ => Err("unmatched opening parentheses, get EoL".to_owned()),
+        let ast = self.parse_concat()?;
+
+        if self.stream.next_if_eq(&')').is_none() {
+            return Err(format!("ERROR: want group close token"));
         }
+
+        return Ok(ast);
     }
 
     fn parse_set(&mut self) -> Result<Ast, String> {
-        self.stream.next(); // consume '['
+        if self.stream.next_if_eq(&'[').is_none() {
+            return Err(format!("ERROR: want set open token"));
+        }
 
         let is_positive = self.stream.next_if_eq(&'^').is_none();
-        let ast = self.parse_set_items()?;
+        let children = self.parse_set_items()?;
 
-        match self.stream.next() {
-            Some(']') => {
-                let kind = match is_positive {
-                    true => AstKind::IncludeSet,
-                    false => AstKind::ExcludeSet,
-                };
-
-                Ok(Ast {
-                    kind,
-                    children: ast.children,
-                })
-            }
-            Some(c) => Err(format!("unmatched opening brackets, get '{}'", c)),
-            _ => Err("unmatched opening brackets, get EoL".to_owned()),
-        }
-    }
-
-    fn parse_set_items(&mut self) -> Result<Ast, String> {
-        let mut children = Vec::new();
-        loop {
-            let ast = self.parse_set_item()?;
-
-            match ast.kind {
-                AstKind::None => break,
-                _ => {
-                    children.push(ast);
-                }
-            }
+        if self.stream.next_if_eq(&']').is_none() {
+            return Err(format!("ERROR: want set close token"));
         }
 
-        match children.len() {
-            0 => Err("set items are empty".to_owned()),
-            _ => Ok(Ast {
-                kind: AstKind::Group,
+        if is_positive {
+            return Ok(Ast {
+                kind: AstKind::IncludeSet,
                 children,
-            }),
+            });
+        } else {
+            return Ok(Ast {
+                kind: AstKind::ExcludeSet,
+                children,
+            });
         }
     }
 
-    fn parse_set_item(&mut self) -> Result<Ast, String> {
-        let ast = self.parse_char()?;
-        if ast.kind == AstKind::None {
-            return Ok(ast);
+    fn parse_repeat(&mut self, lhs: Ast) -> Result<Ast, String> {
+        if self.stream.next_if_eq(&'{').is_none() {
+            return Err(format!("ERROR: want repeat open token"));
         }
 
-        match self.stream.peek() {
-            Some('-') => {
-                self.stream.next();
+        let mut min = RepeatKind::Num(0);
+        let mut max = RepeatKind::Infinity;
 
-                let rhs = self.parse_char()?;
-                if rhs.kind == AstKind::None {
-                    return Err("missing range end character".to_owned());
-                }
+        if self.stream.next_if_eq(&',').is_some() {
+            // pattern : {,n}
+            max = RepeatKind::Num(self.parse_number()?);
+        } else {
+            min = RepeatKind::Num(self.parse_number()?);
 
-                if let (AstKind::Match(MatchKind::Char(a)), AstKind::Match(MatchKind::Char(b))) =
-                    (ast.kind, rhs.kind)
-                {
-                    if a > b {
-                        return Err(format!("out of range order [{}-{}]", a, b));
-                    }
-
-                    Ok(Ast {
-                        kind: AstKind::Match(MatchKind::Range(a, b)),
-                        children: vec![],
-                    })
+            if self.stream.next_if_eq(&',').is_none() {
+                // pattern : {n}
+                max = min
+            } else {
+                if self.stream.peek() != Some(&'}') {
+                    // pattern : {n, m}
+                    max = RepeatKind::Num(self.parse_number()?);
                 } else {
-                    unreachable!()
+                    // pattern : {n,}
                 }
             }
-            _ => Ok(ast),
         }
-    }
 
-    fn parse_anychar(&mut self) -> Result<Ast, String> {
-        self.stream.next(); // consume '.'
+        if self.stream.next_if_eq(&'}').is_none() {
+            return Err(format!("ERROR: want repeat close token"));
+        }
 
-        Ok(Ast {
-            kind: AstKind::Match(MatchKind::Any),
-            children: vec![],
-        })
-    }
-
-    fn parse_sol(&mut self) -> Result<Ast, String> {
-        self.stream.next(); // consume '^'
-
-        Ok(Ast {
-            kind: AstKind::Position(PositionKind::SoL),
-            children: vec![],
-        })
-    }
-
-    fn parse_eol(&mut self) -> Result<Ast, String> {
-        self.stream.next(); // consume '$'
-
-        Ok(Ast {
-            kind: AstKind::Position(PositionKind::EoL),
-            children: vec![],
-        })
-    }
-
-    fn parse_char(&mut self) -> Result<Ast, String> {
-        match self.stream.peek() {
-            Some('\\') => self.parse_metachar(),
-            Some(c) if !META_CHARS.contains(c) => {
-                let c = self.stream.next().unwrap();
-                Ok(Ast {
-                    kind: AstKind::Match(MatchKind::Char(c)),
-                    children: vec![],
-                })
+        match (min, max) {
+            (RepeatKind::Num(n), RepeatKind::Num(m)) if n > m => {
+                return Err(format!("ERROR: repeat range invalid {{{},{}}}", n, m));
             }
-            _ => Ok(Ast {
-                kind: AstKind::None,
-                children: vec![],
-            }),
+            _ => { /* OK */ }
         }
+
+        let greedy = match self.stream.next_if_eq(&'?') {
+            Some(_) => GreedyKind::NonGreedy,
+            None => GreedyKind::Greedy,
+        };
+
+        return Ok(Ast {
+            kind: AstKind::Repeat(min, max, greedy),
+            children: vec![lhs],
+        });
+    }
+
+    fn parse_union(&mut self, lhs: Ast) -> Result<Ast, String> {
+        if self.stream.next_if_eq(&'|').is_none() {
+            return Err(format!("ERROR: want union token"));
+        }
+
+        let mut rhs = self.parse_concat()?;
+        if rhs.children.is_empty() {
+            return Err(format!("ERROR: union right token is empty"));
+        }
+
+        let ast = match rhs.children[0].kind {
+            AstKind::None => {
+                return Err(format!("ERROR: union right token is empty"));
+            }
+            AstKind::Union => {
+                assert!(rhs.children.len() == 1);
+
+                let mut children = vec![lhs];
+                children.append(&mut rhs.children[0].children);
+
+                Ast {
+                    kind: AstKind::Union,
+                    children,
+                }
+            }
+            _ => Ast {
+                kind: AstKind::Union,
+                children: vec![lhs, rhs],
+            },
+        };
+
+        return Ok(ast);
+    }
+
+    fn parse_star(&mut self, lhs: Ast) -> Result<Ast, String> {
+        if self.stream.next_if_eq(&'*').is_none() {
+            return Err(format!("ERROR: want star token"));
+        }
+
+        let greedy = match self.stream.next_if_eq(&'?') {
+            Some(_) => GreedyKind::NonGreedy,
+            None => GreedyKind::Greedy,
+        };
+
+        return Ok(Ast {
+            kind: AstKind::Star(greedy),
+            children: vec![lhs],
+        });
+    }
+
+    fn parse_plus(&mut self, lhs: Ast) -> Result<Ast, String> {
+        if self.stream.next_if_eq(&'+').is_none() {
+            return Err(format!("ERROR: want plus token"));
+        }
+
+        let greedy = match self.stream.next_if_eq(&'?') {
+            Some(_) => GreedyKind::NonGreedy,
+            None => GreedyKind::Greedy,
+        };
+
+        return Ok(Ast {
+            kind: AstKind::Plus(greedy),
+            children: vec![lhs],
+        });
+    }
+
+    fn parse_option(&mut self, lhs: Ast) -> Result<Ast, String> {
+        if self.stream.next_if_eq(&'?').is_none() {
+            return Err(format!("ERROR: want option token"));
+        }
+
+        let greedy = match self.stream.next_if_eq(&'?') {
+            Some(_) => GreedyKind::NonGreedy,
+            None => GreedyKind::Greedy,
+        };
+
+        return Ok(Ast {
+            kind: AstKind::Option(greedy),
+            children: vec![lhs],
+        });
+    }
+
+    fn parse_position(&mut self) -> Result<Ast, String> {
+        let pos = match self.stream.next() {
+            Some('^') => PositionKind::SoL,
+            Some('$') => PositionKind::EoL,
+            Some(c) => return Err(format!("ERROR: unsupport position '{}'", c)),
+            None => return Err(format!("ERROR: want position token, get EOL")),
+        };
+
+        return Ok(Ast {
+            kind: AstKind::Position(pos),
+            children: vec![],
+        });
     }
 
     fn parse_metachar(&mut self) -> Result<Ast, String> {
-        self.stream.next(); // consume '\\'
+        if self.stream.next_if_eq(&'\\').is_none() {
+            return Err(format!("ERROR: want \\ token"));
+        }
 
         match self.stream.next() {
-            Some(c) => {
-                if META_CHARS.contains(&c) {
-                    Ok(Ast {
-                        kind: AstKind::Match(MatchKind::Char(c)),
-                        children: vec![],
-                    })
-                } else {
-                    Err(format!("unsupport escape sequence: \\{}", c))
-                }
+            Some(c) if META_CHARS.contains(&c) => {
+                return Ok(Ast {
+                    kind: AstKind::Match(MatchKind::Char(c)),
+                    children: vec![],
+                });
             }
-            _ => Err("escape sequence is empty".to_owned()),
+            Some(c) if c == '\\' => {
+                return Ok(Ast {
+                    kind: AstKind::Match(MatchKind::Char('\\')),
+                    children: vec![],
+                });
+            }
+            Some(c) => {
+                return Err(format!("ERROR: unsupport control sequence '\\{}'", c));
+            }
+            None => {
+                return Err(format!("ERROR: want control sequence, get EOL"));
+            }
         }
     }
 
-    fn parse_number(&mut self) -> Option<u32> {
+    fn parse_any(&mut self) -> Result<Ast, String> {
+        if self.stream.next_if_eq(&'.').is_none() {
+            return Err(format!("ERROR: want . token"));
+        }
+
+        return Ok(Ast {
+            kind: AstKind::Match(MatchKind::Any),
+            children: vec![],
+        });
+    }
+
+    fn parse_char(&mut self) -> Result<Ast, String> {
+        match self.stream.next() {
+            Some(c) => {
+                return Ok(Ast {
+                    kind: AstKind::Match(MatchKind::Char(c)),
+                    children: vec![],
+                });
+            }
+            None => {
+                return Err(format!("ERROR: want control sequence, get EOL"));
+            }
+        }
+    }
+
+    fn parse_char_range(&mut self, lhs: Ast) -> Result<Ast, String> {
+        if self.stream.next_if_eq(&'-').is_none() {
+            return Err(format!("ERROR: want char-range '-' token"));
+        }
+
+        let rhs = match self.stream.peek() {
+            Some('\\') => self.parse_metachar()?,
+            Some(c) if META_CHARS.contains(c) => {
+                return Err(format!("ERROR: want char-range end, get {}", c));
+            }
+            Some(_) => self.parse_char()?,
+            None => {
+                return Err(format!("ERROR: want char-range end, get EOL"));
+            }
+        };
+
+        let a = if let AstKind::Match(MatchKind::Char(c)) = lhs.kind {
+            c
+        } else {
+            unreachable!()
+        };
+
+        let b = if let AstKind::Match(MatchKind::Char(c)) = rhs.kind {
+            c
+        } else {
+            unreachable!()
+        };
+
+        if a > b {
+            return Err(format!("ERROR: invalid char-range [{}-{}]", a, b));
+        }
+
+        return Ok(Ast {
+            kind: AstKind::Match(MatchKind::Range(a, b)),
+            children: vec![],
+        });
+    }
+
+    fn parse_number(&mut self) -> Result<u32, String> {
         let mut num = String::new();
         while let Some(c) = self.stream.next_if(|c| c.is_ascii_digit()) {
             num.push(c);
         }
-        num.parse().ok()
+
+        num.parse()
+            .or_else(|err: ParseIntError| Err(err.to_string()))
     }
 }
