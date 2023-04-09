@@ -68,7 +68,7 @@ impl Builder {
     }
 
     fn build_include_set(&mut self, ast: &Ast, dst_id: usize) -> usize {
-        let mut set_items = Self::build_set_items(ast);
+        let set_items = Self::build_set_items(ast);
 
         let node_id = self.nodes.len();
         self.nodes.push(Node {
@@ -81,7 +81,7 @@ impl Builder {
     }
 
     fn build_exclude_set(&mut self, ast: &Ast, dst_id: usize) -> usize {
-        let mut set_items = Self::build_set_items(ast);
+        let set_items = Self::build_set_items(ast);
 
         let node_id = self.nodes.len();
         self.nodes.push(Node {
