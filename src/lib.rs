@@ -1,3 +1,3 @@
-pub mod nfa;
 pub mod parser;
+pub mod sfa;
 pub mod vm;
