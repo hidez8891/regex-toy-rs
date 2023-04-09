@@ -29,23 +29,9 @@ impl Compiler {
             AstKind::Star(greedy) => Self::compile_star(ast, greedy),
             AstKind::Plus(greedy) => Self::compile_plus(ast, greedy),
             AstKind::Option(greedy) => Self::compile_option(ast, greedy),
-            AstKind::Repeat(n, m, greedy) => match (n, m) {
-                (RepeatKind::Num(n), RepeatKind::Num(m)) => {
-                    if n == m {
-                        Self::compile_repeat_count(ast, *n)
-                    } else {
-                        Self::compile_repeat_range(ast, *n, *m, greedy)
-                    }
-                }
-                (RepeatKind::Num(c), RepeatKind::Infinity) => {
-                    Self::compile_repeat_min(ast, *c, greedy)
-                }
-                (RepeatKind::Infinity, _) => {
-                    unreachable!()
-                }
-            },
-            AstKind::Match(kind) => Self::compile_match(ast, kind),
-            AstKind::Position(kind) => Self::compile_position(ast, kind),
+            AstKind::Repeat(n, m, greedy) => Self::compile_repeat(ast, n, m, greedy),
+            AstKind::Match(kind) => Self::compile_match(kind),
+            AstKind::Position(kind) => Self::compile_position(kind),
             AstKind::None => unreachable!(),
         }
     }
@@ -82,62 +68,63 @@ impl Compiler {
     }
 
     fn compile_include_set(ast: &Ast) -> Vec<Inst> {
-        let mut insts = Self::compile_include_set_impl(ast, 2);
-        insts.reverse();
-        insts.push(Inst::Fail);
-        insts.push(Inst::ConsumeRead);
-        insts
-    }
-
-    fn compile_include_set_impl(ast: &Ast, dst_addr: isize) -> Vec<Inst> {
         let mut insts = Vec::new();
-        let mut dst_addr = dst_addr;
+        insts.push(Inst::Seek(1));
+        insts.push(Inst::Fail);
+
+        let mut dst_addr = 2;
+
         for child in ast.children.iter().rev() {
             match &child.kind {
-                AstKind::Group => {
-                    let item = Self::compile_include_set_impl(child, dst_addr);
-                    dst_addr += item.len() as isize;
-
-                    insts.extend(item);
-                }
                 AstKind::Match(kind) => match kind {
                     MatchKind::Char(c) => {
-                        insts.push(Inst::JmpIfInclude(*c, *c, dst_addr));
-                        dst_addr += 1;
+                        insts.push(Inst::JmpIfTrue(dst_addr));
+                        insts.push(Inst::CheckInclude(*c, *c));
+                        dst_addr += 2;
                     }
                     MatchKind::Range(a, b) => {
-                        insts.push(Inst::JmpIfInclude(*a, *b, dst_addr));
-                        dst_addr += 1;
+                        insts.push(Inst::JmpIfTrue(dst_addr));
+                        insts.push(Inst::CheckInclude(*a, *b));
+                        dst_addr += 2;
                     }
-                    MatchKind::Any => unreachable!(),
+                    _ => unreachable!(),
                 },
                 _ => unreachable!(),
             }
         }
+
+        insts.reverse();
         insts
     }
 
     fn compile_exclude_set(ast: &Ast) -> Vec<Inst> {
         let mut insts = Vec::new();
-        for child in ast.children.iter() {
+        insts.push(Inst::Fail);
+        insts.push(Inst::Jmp(2));
+        insts.push(Inst::Seek(1));
+
+        let mut fail_addr = 3;
+
+        for child in ast.children.iter().rev() {
             match &child.kind {
-                AstKind::Group => {
-                    let item = Self::compile_exclude_set(child);
-                    insts.extend(item);
-                }
                 AstKind::Match(kind) => match kind {
                     MatchKind::Char(c) => {
-                        insts.push(Inst::SkipReadIfExclude(*c, *c));
+                        insts.push(Inst::JmpIfFalse(fail_addr));
+                        insts.push(Inst::CheckExclude(*c, *c));
+                        fail_addr += 2;
                     }
                     MatchKind::Range(a, b) => {
-                        insts.push(Inst::SkipReadIfExclude(*a, *b));
+                        insts.push(Inst::JmpIfFalse(fail_addr));
+                        insts.push(Inst::CheckExclude(*a, *b));
+                        fail_addr += 2;
                     }
-                    MatchKind::Any => unreachable!(),
+                    _ => unreachable!(),
                 },
                 _ => unreachable!(),
             }
         }
-        insts.push(Inst::ConsumeRead);
+
+        insts.reverse();
         insts
     }
 
@@ -187,6 +174,29 @@ impl Compiler {
         insts
     }
 
+    #[rustfmt::skip]
+    fn compile_repeat(
+        ast: &Ast,
+        min: &RepeatKind,
+        max: &RepeatKind,
+        greedy: &GreedyKind,
+    ) -> Vec<Inst> {
+        match (min, max) {
+            (RepeatKind::Num(n), RepeatKind::Num(m)) if n == m => {
+                Self::compile_repeat_count(ast, *n)
+            }
+            (RepeatKind::Num(n), RepeatKind::Num(m)) => {
+                Self::compile_repeat_range(ast, *n, *m, greedy)
+            }
+            (RepeatKind::Num(c), RepeatKind::Infinity) => {
+                Self::compile_repeat_min(ast, *c, greedy)
+            }
+            (RepeatKind::Infinity, _) => {
+                unreachable!()
+            }
+        }
+    }
+
     fn compile_repeat_count(ast: &Ast, count: u32) -> Vec<Inst> {
         let child_insts = Self::compile_root(&ast.children[0]);
 
@@ -229,18 +239,18 @@ impl Compiler {
         insts
     }
 
-    fn compile_match(ast: &Ast, kind: &MatchKind) -> Vec<Inst> {
+    fn compile_match(kind: &MatchKind) -> Vec<Inst> {
         match kind {
-            MatchKind::Any => [Inst::Any].into(),
-            MatchKind::Char(c) => [Inst::Char(*c)].into(),
-            MatchKind::Range(a, b) => unreachable!(),
+            MatchKind::Any => [Inst::MatchCharAny].into(),
+            MatchKind::Char(c) => [Inst::MatchChar(*c)].into(),
+            MatchKind::Range(_, _) => unreachable!(),
         }
     }
 
-    fn compile_position(ast: &Ast, position: &PositionKind) -> Vec<Inst> {
+    fn compile_position(position: &PositionKind) -> Vec<Inst> {
         match position {
-            PositionKind::SoL => [Inst::PosSOL].into(),
-            PositionKind::EoL => [Inst::PosEOL].into(),
+            PositionKind::SoL => [Inst::MatchPosSOL].into(),
+            PositionKind::EoL => [Inst::MatchPosEOL].into(),
         }
     }
 }

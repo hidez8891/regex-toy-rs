@@ -7,6 +7,7 @@ pub struct Executer<'a> {
     sp: usize,
     is_fail: bool,
     is_match: bool,
+    check_result: bool,
 }
 
 impl<'a> Executer<'a> {
@@ -18,6 +19,7 @@ impl<'a> Executer<'a> {
             sp: 0,
             is_fail: false,
             is_match: false,
+            check_result: false,
         }
     }
 
@@ -30,6 +32,7 @@ impl<'a> Executer<'a> {
             sp: 0,
             is_fail: false,
             is_match: false,
+            check_result: false,
         }
     }
 
@@ -77,13 +80,29 @@ impl<'a> Executer<'a> {
                 self.is_match = true;
                 return;
             }
-            Inst::ConsumeRead => {
-                self.sp += 1;
+            Inst::Seek(offset) => {
+                self.sp = self.sp.saturating_add_signed(*offset);
                 self.pc += 1;
                 return;
             }
             Inst::Jmp(addr) => {
                 self.pc = self.pc.saturating_add_signed(*addr);
+                return;
+            }
+            Inst::JmpIfTrue(addr) => {
+                if self.check_result {
+                    self.pc = self.pc.saturating_add_signed(*addr);
+                } else {
+                    self.pc += 1;
+                }
+                return;
+            }
+            Inst::JmpIfFalse(addr) => {
+                if !self.check_result {
+                    self.pc = self.pc.saturating_add_signed(*addr);
+                } else {
+                    self.pc += 1;
+                }
                 return;
             }
             Inst::Split(addr1, addr2) => {
@@ -92,7 +111,7 @@ impl<'a> Executer<'a> {
                 self.pc = self.pc.saturating_add_signed(*addr1);
                 return;
             }
-            Inst::Char(s) => {
+            Inst::MatchChar(s) => {
                 if let Some(c) = str.chars().nth(self.sp) {
                     if *s == c {
                         self.sp += 1;
@@ -101,42 +120,37 @@ impl<'a> Executer<'a> {
                     }
                 }
             }
-            Inst::Any => {
+            Inst::MatchCharAny => {
                 if let Some(_) = str.chars().nth(self.sp) {
                     self.sp += 1;
                     self.pc += 1;
                     return;
                 }
             }
-            Inst::PosSOL => {
+            Inst::MatchPosSOL => {
                 if self.sp == 0 {
                     self.pc += 1;
                     return;
                 }
             }
-            Inst::PosEOL => {
+            Inst::MatchPosEOL => {
                 if self.sp == str.len() {
                     self.pc += 1;
                     return;
                 }
             }
-            Inst::JmpIfInclude(a, b, addr) => {
+            Inst::CheckInclude(a, b) => {
                 if let Some(c) = str.chars().nth(self.sp) {
-                    if *a <= c && c <= *b {
-                        self.pc = self.pc.saturating_add_signed(*addr);
-                        return;
-                    } else {
-                        self.pc += 1;
-                        return;
-                    }
+                    self.check_result = *a <= c && c <= *b;
+                    self.pc += 1;
+                    return;
                 }
             }
-            Inst::SkipReadIfExclude(a, b) => {
+            Inst::CheckExclude(a, b) => {
                 if let Some(c) = str.chars().nth(self.sp) {
-                    if *a > c || c > *b {
-                        self.pc += 1;
-                        return;
-                    }
+                    self.check_result = *a > c || c > *b;
+                    self.pc += 1;
+                    return;
                 }
             }
         }
