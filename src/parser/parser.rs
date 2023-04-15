@@ -460,7 +460,6 @@ impl Parser {
             num.push(c);
         }
 
-        num.parse()
-            .or_else(|err: ParseIntError| Err(err.to_string()))
+        num.parse().map_err(|err: ParseIntError| err.to_string())
     }
 }

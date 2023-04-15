@@ -151,11 +151,8 @@ impl<'a> Builder<'a> {
             }
 
             for edge in self.nfa_nodes[*i].nexts.iter() {
-                match edge.action {
-                    nfa::EdgeAction::Asap => {
-                        q.push_back(&edge.next_id);
-                    }
-                    _ => { /* nothing */ }
+                if let nfa::EdgeAction::Asap = edge.action {
+                    q.push_back(&edge.next_id);
                 }
             }
         }
