@@ -1,3 +1,5 @@
+use std::collections::{BTreeSet, VecDeque};
+
 use super::nfa::*;
 use crate::parser::{
     ast::{AstKind, GreedyKind, MatchKind, PositionKind, RepeatKind},
@@ -25,6 +27,7 @@ impl Builder {
         self.nodes[0].nexts.push(Edge {
             action: EdgeAction::Asap,
             next_id: node_id,
+            is_greedy: true,
         });
     }
 
@@ -62,6 +65,7 @@ impl Builder {
             self.nodes[node_id].nexts.push(Edge {
                 action: EdgeAction::Asap,
                 next_id: match_id,
+                is_greedy: true,
             });
         }
         node_id
@@ -75,6 +79,7 @@ impl Builder {
             nexts: vec![Edge {
                 action: EdgeAction::MatchIncludeSet(set_items),
                 next_id: dst_id,
+                is_greedy: true,
             }],
         });
         node_id
@@ -88,6 +93,7 @@ impl Builder {
             nexts: vec![Edge {
                 action: EdgeAction::MatchExcludeSet(set_items),
                 next_id: dst_id,
+                is_greedy: true,
             }],
         });
         node_id
@@ -118,12 +124,14 @@ impl Builder {
         self.nodes[loop_id].nexts.push(Edge {
             action: EdgeAction::Asap,
             next_id: match_id,
+            is_greedy: true,
         });
 
         if matches!(*greedy, GreedyKind::Greedy) {
             self.nodes[loop_id].nexts.push(Edge {
                 action: EdgeAction::Asap,
                 next_id: dst_id,
+                is_greedy: true,
             });
         } else {
             self.nodes[loop_id].nexts.insert(
@@ -131,8 +139,13 @@ impl Builder {
                 Edge {
                     action: EdgeAction::Asap,
                     next_id: dst_id,
+                    is_greedy: true,
                 },
             );
+        }
+
+        if matches!(*greedy, GreedyKind::NonGreedy) {
+            self.recursive_set_greedy(loop_id, dst_id, false);
         }
 
         loop_id
@@ -146,12 +159,14 @@ impl Builder {
         self.nodes[loop_id].nexts.push(Edge {
             action: EdgeAction::Asap,
             next_id: match_id,
+            is_greedy: true,
         });
 
         if matches!(*greedy, GreedyKind::Greedy) {
             self.nodes[loop_id].nexts.push(Edge {
                 action: EdgeAction::Asap,
                 next_id: dst_id,
+                is_greedy: true,
             });
         } else {
             self.nodes[loop_id].nexts.insert(
@@ -159,8 +174,13 @@ impl Builder {
                 Edge {
                     action: EdgeAction::Asap,
                     next_id: dst_id,
+                    is_greedy: true,
                 },
             );
+        }
+
+        if matches!(*greedy, GreedyKind::NonGreedy) {
+            self.recursive_set_greedy(match_id, dst_id, false);
         }
 
         match_id
@@ -173,6 +193,7 @@ impl Builder {
             self.nodes[match_id].nexts.push(Edge {
                 action: EdgeAction::Asap,
                 next_id: dst_id,
+                is_greedy: true,
             });
         } else {
             self.nodes[match_id].nexts.insert(
@@ -180,8 +201,13 @@ impl Builder {
                 Edge {
                     action: EdgeAction::Asap,
                     next_id: dst_id,
+                    is_greedy: true,
                 },
             );
+        }
+
+        if matches!(*greedy, GreedyKind::NonGreedy) {
+            self.recursive_set_greedy(match_id, dst_id, false);
         }
 
         match_id
@@ -251,6 +277,7 @@ impl Builder {
                 self.nodes[repeat_id].nexts.push(Edge {
                     action: EdgeAction::Asap,
                     next_id: dst_id,
+                    is_greedy: true,
                 });
             } else {
                 self.nodes[repeat_id].nexts.insert(
@@ -258,10 +285,15 @@ impl Builder {
                     Edge {
                         action: EdgeAction::Asap,
                         next_id: dst_id,
+                        is_greedy: true,
                     },
                 );
             }
             match_id = repeat_id;
+        }
+
+        if matches!(*greedy, GreedyKind::NonGreedy) {
+            self.recursive_set_greedy(match_id, dst_id, false);
         }
 
         self.build_repeat_count(ast, min, match_id)
@@ -280,6 +312,7 @@ impl Builder {
             nexts: vec![Edge {
                 action,
                 next_id: dst_id,
+                is_greedy: true,
             }],
         });
 
@@ -298,9 +331,29 @@ impl Builder {
             nexts: vec![Edge {
                 action,
                 next_id: dst_id,
+                is_greedy: true,
             }],
         });
 
         node_id
+    }
+
+    fn recursive_set_greedy(&mut self, start_id: usize, end_id: usize, is_greedy: bool) {
+        let mut finished = BTreeSet::new();
+        finished.insert(end_id);
+
+        let mut q = VecDeque::new();
+        q.push_back(start_id);
+
+        while let Some(id) = q.pop_front() {
+            if !finished.insert(id) {
+                continue;
+            }
+
+            for edge in self.nodes[id].nexts.iter_mut() {
+                edge.is_greedy = is_greedy;
+                q.push_back(edge.next_id);
+            }
+        }
     }
 }

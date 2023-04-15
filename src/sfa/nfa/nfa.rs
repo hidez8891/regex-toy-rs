@@ -27,6 +27,7 @@ pub struct Node {
 pub struct Edge {
     pub action: EdgeAction,
     pub next_id: usize,
+    pub is_greedy: bool,
 }
 
 pub enum EdgeAction {

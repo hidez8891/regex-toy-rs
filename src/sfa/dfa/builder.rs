@@ -42,9 +42,11 @@ impl<'a> Builder<'a> {
                 continue;
             }
 
+            let is_match = index.contains(&1);
+
             let mut trans = Transition::new(256);
             for i in index.iter() {
-                let trans_map = self.build_trans_map(&self.nfa_nodes[*i]);
+                let trans_map = self.build_trans_map(&self.nfa_nodes[*i], is_match);
                 trans.merge(&trans_map);
             }
 
@@ -57,16 +59,19 @@ impl<'a> Builder<'a> {
                 q.push_back(trans.end_line.clone());
             }
 
-            let is_match = index.contains(&1);
             self.dfa_nodemap.insert(index, self.dfa_nodes.len());
             self.dfa_nodes.push(Node { trans, is_match });
         }
     }
 
-    fn build_trans_map(&self, node: &nfa::Node) -> Transition {
+    fn build_trans_map(&self, node: &nfa::Node, is_match: bool) -> Transition {
         let mut trans = Transition::new(256);
 
         for edge in node.nexts.iter() {
+            if is_match && !edge.is_greedy {
+                continue;
+            }
+
             match &edge.action {
                 nfa::EdgeAction::Asap => { /* nothing */ }
                 nfa::EdgeAction::Match(c) => {
