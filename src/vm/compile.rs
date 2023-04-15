@@ -31,7 +31,6 @@ impl Compiler {
             AstKind::Repeat(n, m, greedy) => Self::compile_repeat(ast, n, m, greedy),
             AstKind::Match(kind) => Self::compile_match(kind),
             AstKind::Position(kind) => Self::compile_position(kind),
-            AstKind::None => unreachable!(),
         }
     }
 

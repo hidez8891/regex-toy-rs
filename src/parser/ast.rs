@@ -16,7 +16,6 @@ pub enum AstKind {
     Repeat(RepeatKind, RepeatKind, GreedyKind),
     Match(MatchKind),
     Position(PositionKind),
-    None,
 }
 
 #[derive(Debug, PartialEq)]

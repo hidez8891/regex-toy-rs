@@ -43,7 +43,6 @@ impl Builder {
             AstKind::Repeat(n, m, greedy) => self.build_repeat(ast, n, m, greedy, dst_id),
             AstKind::Match(kind) => self.build_match(kind, dst_id),
             AstKind::Position(kind) => self.build_position(kind, dst_id),
-            AstKind::None => unreachable!(),
         }
     }
 

@@ -282,9 +282,6 @@ impl Parser {
         }
 
         let ast = match rhs.children[0].kind {
-            AstKind::None => {
-                return Err(format!("ERROR: union right token is empty"));
-            }
             AstKind::Union => {
                 assert!(rhs.children.len() == 1);
 
