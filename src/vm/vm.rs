@@ -8,7 +8,7 @@ pub struct Vm {
 impl Vm {
     pub fn new(pattern: &str) -> Result<Vm, String> {
         let ast = Parser::parse(pattern)?;
-        let insts = Compiler::compile_from(&ast);
+        let insts = Compiler::compile(&ast);
         Ok(Vm { insts })
     }
 

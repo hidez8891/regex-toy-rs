@@ -42,23 +42,3 @@ pub enum PositionKind {
     SoL, // '^'
     EoL, // '$'
 }
-
-impl Ast {
-    pub fn new(kind: AstKind) -> Self {
-        Ast {
-            kind,
-            children: vec![],
-        }
-    }
-
-    pub fn set_greedy(&mut self, greedy: GreedyKind) {
-        use AstKind::*;
-
-        match &self.kind {
-            Star(_) => self.kind = Star(greedy),
-            Plus(_) => self.kind = Plus(greedy),
-            Repeat(n, m, _) => self.kind = Repeat(*n, *m, greedy),
-            _ => { /* nothing */ }
-        }
-    }
-}

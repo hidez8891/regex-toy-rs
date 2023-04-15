@@ -27,15 +27,6 @@ pub(crate) struct Node {
     pub is_match: bool,
 }
 
-impl Node {
-    pub fn new() -> Self {
-        Node {
-            trans: Transition::new(256),
-            is_match: false,
-        }
-    }
-}
-
 pub(crate) struct Transition {
     pub trans: Vec<IndexSet>,
     pub start_line: IndexSet,

@@ -1,19 +1,13 @@
 use super::inst::Inst;
 use crate::parser::{
     ast::{AstKind, GreedyKind, MatchKind, PositionKind, RepeatKind},
-    Ast, Parser,
+    Ast,
 };
 
 pub(crate) struct Compiler {}
 
 impl Compiler {
-    pub fn compile(pattern: &str) -> Result<Vec<Inst>, String> {
-        let ast = Parser::parse(pattern)?;
-        let insts = Self::compile_from(&ast);
-        Ok(insts)
-    }
-
-    pub fn compile_from(ast: &Ast) -> Vec<Inst> {
+    pub fn compile(ast: &Ast) -> Vec<Inst> {
         let mut insts = Self::compile_root(ast);
         insts.push(Inst::Success);
         insts
