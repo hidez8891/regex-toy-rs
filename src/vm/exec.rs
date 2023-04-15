@@ -1,6 +1,6 @@
 use super::inst::Inst;
 
-pub struct Executer<'a> {
+pub(crate) struct Executer<'a> {
     insts: &'a Vec<Inst>,
     stack: Vec<(usize, usize)>,
     pc: usize,

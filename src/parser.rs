@@ -22,16 +22,16 @@
 // position  = '^' | '$'
 // matcher   = '\' meta-char | char
 
-pub mod ast;
+pub(crate) mod ast;
 mod parser;
 
-pub use ast::Ast;
-pub use parser::Parser;
+pub(crate) use ast::Ast;
+pub(crate) use parser::Parser;
 
 #[cfg(test)]
 mod tests {
     use super::ast::*;
-    use super::parser::*;
+    use super::*;
 
     fn run(pattern: &str) -> Result<Ast, String> {
         Parser::parse(pattern)

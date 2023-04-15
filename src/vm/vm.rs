@@ -1,8 +1,5 @@
+use super::{compile::Compiler, exec::Executer, inst::Inst};
 use crate::parser::Parser;
-
-use super::compile::Compiler;
-use super::exec::Executer;
-use super::inst::Inst;
 
 pub struct Vm {
     insts: Vec<Inst>,

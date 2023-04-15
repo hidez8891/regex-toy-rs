@@ -2,7 +2,10 @@ use std::iter::Peekable;
 use std::num::ParseIntError;
 use std::vec::IntoIter;
 
-use super::ast::*;
+use super::{
+    ast::{AstKind, GreedyKind, MatchKind, PositionKind, RepeatKind},
+    Ast,
+};
 
 const META_CHARS: [char; 15] = [
     '|', // union
@@ -19,7 +22,7 @@ const META_CHARS: [char; 15] = [
     '[', ']', // set brackets
 ];
 
-pub struct Parser {
+pub(crate) struct Parser {
     stream: Peekable<IntoIter<char>>,
 }
 

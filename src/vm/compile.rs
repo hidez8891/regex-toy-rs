@@ -1,11 +1,10 @@
+use super::inst::Inst;
 use crate::parser::{
     ast::{AstKind, GreedyKind, MatchKind, PositionKind, RepeatKind},
     Ast, Parser,
 };
 
-use super::inst::Inst;
-
-pub struct Compiler {}
+pub(crate) struct Compiler {}
 
 impl Compiler {
     pub fn compile(pattern: &str) -> Result<Vec<Inst>, String> {

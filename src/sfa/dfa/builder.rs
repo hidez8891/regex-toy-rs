@@ -1,9 +1,9 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
-use super::dfa::*;
-use crate::sfa::nfa::{nfa::MatchSet, *};
+use super::dfa::{Dfa, IndexSet, Node, Transition};
+use crate::sfa::nfa::nfa;
 
-pub struct Builder<'a> {
+pub(crate) struct Builder<'a> {
     nfa_nodes: &'a Vec<nfa::Node>,
     dfa_nodes: Vec<Node>,
     dfa_nodemap: HashMap<IndexSet, usize>,
@@ -85,10 +85,10 @@ impl<'a> Builder<'a> {
                 nfa::EdgeAction::MatchIncludeSet(set) => {
                     for m in set.iter() {
                         match m {
-                            MatchSet::Char(c) => {
+                            nfa::MatchSet::Char(c) => {
                                 trans.trans[*c as usize].insert(edge.next_id);
                             }
-                            MatchSet::Range(a, b) => {
+                            nfa::MatchSet::Range(a, b) => {
                                 for c in *a..=*b {
                                     trans.trans[c as usize].insert(edge.next_id);
                                 }
@@ -103,11 +103,11 @@ impl<'a> Builder<'a> {
                     // calc exclude transition-map
                     for m in set.iter() {
                         match m {
-                            MatchSet::Char(c) => {
+                            nfa::MatchSet::Char(c) => {
                                 exclude_trans.trans[*c as usize].insert(edge.next_id);
                                 next_nodes.insert(edge.next_id);
                             }
-                            MatchSet::Range(a, b) => {
+                            nfa::MatchSet::Range(a, b) => {
                                 for c in *a..=*b {
                                     exclude_trans.trans[c as usize].insert(edge.next_id);
                                     next_nodes.insert(edge.next_id);

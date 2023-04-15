@@ -1,6 +1,6 @@
-use super::dfa::{Dfa, IndexSet};
+use super::dfa::Dfa;
 
-pub struct Matcher<'a> {
+pub(crate) struct Matcher<'a> {
     dfa: &'a Dfa,
     start_index: i32,
     last_index: i32,

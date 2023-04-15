@@ -1,12 +1,12 @@
 use std::collections::{BTreeSet, VecDeque};
 
-use super::nfa::*;
+use super::nfa::{Edge, EdgeAction, MatchSet, Node};
 use crate::parser::{
     ast::{AstKind, GreedyKind, MatchKind, PositionKind, RepeatKind},
     Ast,
 };
 
-pub struct Builder {
+pub(crate) struct Builder {
     nodes: Vec<Node>,
 }
 

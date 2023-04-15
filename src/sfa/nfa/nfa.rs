@@ -1,9 +1,8 @@
+use super::{builder::Builder, matcher::Matcher};
 use crate::parser::Parser;
 
-use super::{builder::Builder, matcher::Matcher};
-
 pub struct Nfa {
-    pub nodes: Vec<Node>,
+    pub(crate) nodes: Vec<Node>,
 }
 
 impl Nfa {
@@ -20,17 +19,17 @@ impl Nfa {
     }
 }
 
-pub struct Node {
+pub(crate) struct Node {
     pub nexts: Vec<Edge>,
 }
 
-pub struct Edge {
+pub(crate) struct Edge {
     pub action: EdgeAction,
     pub next_id: usize,
     pub is_greedy: bool,
 }
 
-pub enum EdgeAction {
+pub(crate) enum EdgeAction {
     Asap,
     Match(char),
     MatchAny,
@@ -40,7 +39,7 @@ pub enum EdgeAction {
     MatchExcludeSet(Vec<MatchSet>),
 }
 
-pub enum MatchSet {
+pub(crate) enum MatchSet {
     Char(char),
     Range(char, char),
 }

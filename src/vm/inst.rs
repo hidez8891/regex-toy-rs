@@ -1,5 +1,5 @@
 #[derive(Debug, Clone)]
-pub enum Inst {
+pub(crate) enum Inst {
     Fail,
     Success,
     Seek(isize),

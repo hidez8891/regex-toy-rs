@@ -1,6 +1,8 @@
 mod builder;
-pub mod dfa;
+mod dfa;
 mod matcher;
+
+pub use dfa::Dfa;
 
 #[cfg(test)]
 mod tests {

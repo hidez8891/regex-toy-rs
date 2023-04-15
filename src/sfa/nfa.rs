@@ -1,6 +1,8 @@
 mod builder;
 mod matcher;
-pub mod nfa;
+pub(crate) mod nfa;
+
+pub use nfa::Nfa;
 
 #[cfg(test)]
 mod tests {

@@ -1,2 +1,5 @@
-pub mod dfa;
-pub mod nfa;
+mod dfa;
+mod nfa;
+
+pub use dfa::Dfa;
+pub use nfa::Nfa;

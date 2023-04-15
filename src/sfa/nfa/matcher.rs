@@ -1,6 +1,6 @@
 use super::nfa::{EdgeAction, MatchSet, Node};
 
-pub struct Matcher<'a> {
+pub(crate) struct Matcher<'a> {
     nodes: &'a Vec<Node>,
     success_id: usize,
     start_index: usize,

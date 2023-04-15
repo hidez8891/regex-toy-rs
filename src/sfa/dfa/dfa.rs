@@ -1,14 +1,11 @@
 use std::collections::{BTreeSet, HashMap};
 
-use crate::sfa::nfa::nfa::Nfa;
-
 use super::{builder::Builder, matcher::Matcher};
-
-pub type IndexSet = BTreeSet<usize>;
+use crate::sfa::Nfa;
 
 pub struct Dfa {
-    pub nodes: Vec<Node>,
-    pub nodemap: HashMap<IndexSet, usize>,
+    pub(crate) nodes: Vec<Node>,
+    pub(crate) nodemap: HashMap<IndexSet, usize>,
 }
 
 impl Dfa {
@@ -25,7 +22,7 @@ impl Dfa {
     }
 }
 
-pub struct Node {
+pub(crate) struct Node {
     pub trans: Transition,
     pub is_match: bool,
 }
@@ -39,7 +36,7 @@ impl Node {
     }
 }
 
-pub struct Transition {
+pub(crate) struct Transition {
     pub trans: Vec<IndexSet>,
     pub start_line: IndexSet,
     pub end_line: IndexSet,
@@ -67,3 +64,5 @@ impl Transition {
         self.end_line = &self.end_line | &other.end_line;
     }
 }
+
+pub(crate) type IndexSet = BTreeSet<usize>;
