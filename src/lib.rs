@@ -1,3 +1,6 @@
-pub mod nfa;
-pub mod parser;
-pub mod vm;
+mod parser;
+mod sfa;
+mod vm;
+
+pub use sfa::{Dfa, Nfa};
+pub use vm::Vm;
