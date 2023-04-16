@@ -38,23 +38,23 @@ impl<'a> Matcher<'a> {
     fn execute_<'b>(&mut self, str: &'b str, sp: usize) -> Option<&'b str> {
         self.start_index = sp as i32;
 
-        let mut index = self.dfa.nodemap.iter().find(|v| *v.1 == 0).unwrap().0;
+        let mut index = self.dfa.indexmap.iter().find(|v| *v.1 == 0).unwrap().0;
         let mut sp = sp;
 
         while !index.is_empty() {
-            let id = self.dfa.nodemap[index];
+            let id = self.dfa.indexmap[index];
             let node = &self.dfa.nodes[id];
 
             if node.is_match {
                 self.last_index = sp as i32;
             }
 
-            if sp == 0 && !node.trans.start_line.is_empty() {
-                index = &node.trans.start_line;
+            if sp == 0 && !node.trans.sol_next_index.is_empty() {
+                index = &node.trans.sol_next_index;
                 continue;
             }
-            if sp == str.len() && !node.trans.end_line.is_empty() {
-                index = &node.trans.end_line;
+            if sp == str.len() && !node.trans.eol_next_index.is_empty() {
+                index = &node.trans.eol_next_index;
                 continue;
             }
             if sp >= str.len() {
@@ -62,7 +62,7 @@ impl<'a> Matcher<'a> {
             }
 
             let c = str.chars().nth(sp).unwrap();
-            index = &node.trans.trans[c as usize];
+            index = &node.trans.table[c as usize];
             sp += 1;
         }
 

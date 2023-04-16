@@ -5,7 +5,7 @@ use crate::sfa::Nfa;
 
 pub struct Dfa {
     pub(crate) nodes: Vec<Node>,
-    pub(crate) nodemap: HashMap<IndexSet, usize>,
+    pub(crate) indexmap: HashMap<IndexSet, usize>,
 }
 
 impl Dfa {
@@ -28,31 +28,31 @@ pub(crate) struct Node {
 }
 
 pub(crate) struct Transition {
-    pub trans: Vec<IndexSet>,
-    pub start_line: IndexSet,
-    pub end_line: IndexSet,
+    pub table: Vec<IndexSet>,
+    pub sol_next_index: IndexSet,
+    pub eol_next_index: IndexSet,
 }
 
 impl Transition {
     pub fn new(size: usize) -> Self {
-        let mut trans = Vec::with_capacity(size);
+        let mut table = Vec::with_capacity(size);
         for _ in 0..size {
-            trans.push(IndexSet::default());
+            table.push(IndexSet::default());
         }
         Transition {
-            trans,
-            start_line: IndexSet::default(),
-            end_line: IndexSet::default(),
+            table,
+            sol_next_index: IndexSet::default(),
+            eol_next_index: IndexSet::default(),
         }
     }
 
     pub fn merge(&mut self, other: &Transition) {
-        assert_eq!(self.trans.len(), other.trans.len());
-        for i in 0..self.trans.len() {
-            self.trans[i] = &self.trans[i] | &other.trans[i];
+        assert_eq!(self.table.len(), other.table.len());
+        for i in 0..self.table.len() {
+            self.table[i] = &self.table[i] | &other.table[i];
         }
-        self.start_line = &self.start_line | &other.start_line;
-        self.end_line = &self.end_line | &other.end_line;
+        self.sol_next_index = &self.sol_next_index | &other.sol_next_index;
+        self.eol_next_index = &self.eol_next_index | &other.eol_next_index;
     }
 }
 

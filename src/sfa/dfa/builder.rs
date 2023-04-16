@@ -6,7 +6,7 @@ use crate::sfa::nfa::nfa;
 pub(crate) struct Builder<'a> {
     nfa_nodes: &'a Vec<nfa::Node>,
     dfa_nodes: Vec<Node>,
-    dfa_nodemap: HashMap<IndexSet, usize>,
+    dfa_indexmap: HashMap<IndexSet, usize>,
 }
 
 impl<'a> Builder<'a> {
@@ -14,14 +14,14 @@ impl<'a> Builder<'a> {
         let mut builder = Builder {
             nfa_nodes: &nfa.nodes,
             dfa_nodes: Vec::new(),
-            dfa_nodemap: HashMap::new(),
+            dfa_indexmap: HashMap::new(),
         };
 
         builder.build_();
 
         return Dfa {
             nodes: builder.dfa_nodes,
-            nodemap: builder.dfa_nodemap,
+            indexmap: builder.dfa_indexmap,
         };
     }
 
@@ -30,7 +30,7 @@ impl<'a> Builder<'a> {
         {
             let mut index = IndexSet::new();
             index.insert(0);
-            index = self.resolve_empty_trans(&index);
+            index = self.resolve_empty_transition(&index);
             q.push_back(index);
         }
 
@@ -38,7 +38,7 @@ impl<'a> Builder<'a> {
             if index.is_empty() {
                 continue;
             }
-            if self.dfa_nodemap.contains_key(&index) {
+            if self.dfa_indexmap.contains_key(&index) {
                 continue;
             }
 
@@ -50,16 +50,16 @@ impl<'a> Builder<'a> {
                 trans.merge(&trans_map);
             }
 
-            let uniq_index_list: HashSet<_> = trans.trans.iter().cloned().collect();
+            let uniq_index_list: HashSet<_> = trans.table.iter().cloned().collect();
             q.extend(uniq_index_list.into_iter());
-            if !trans.start_line.is_empty() {
-                q.push_back(trans.start_line.clone());
+            if !trans.sol_next_index.is_empty() {
+                q.push_back(trans.sol_next_index.clone());
             }
-            if !trans.end_line.is_empty() {
-                q.push_back(trans.end_line.clone());
+            if !trans.eol_next_index.is_empty() {
+                q.push_back(trans.eol_next_index.clone());
             }
 
-            self.dfa_nodemap.insert(index, self.dfa_nodes.len());
+            self.dfa_indexmap.insert(index, self.dfa_nodes.len());
             self.dfa_nodes.push(Node { trans, is_match });
         }
     }
@@ -75,73 +75,73 @@ impl<'a> Builder<'a> {
             match &edge.action {
                 nfa::EdgeAction::Asap => { /* nothing */ }
                 nfa::EdgeAction::Match(c) => {
-                    trans.trans[*c as usize].insert(edge.next_id);
+                    trans.table[*c as usize].insert(edge.next_id);
                 }
                 nfa::EdgeAction::MatchAny => {
-                    for tmap in trans.trans.iter_mut() {
-                        tmap.insert(edge.next_id);
+                    for indexset in trans.table.iter_mut() {
+                        indexset.insert(edge.next_id);
                     }
                 }
                 nfa::EdgeAction::MatchIncludeSet(set) => {
                     for m in set.iter() {
                         match m {
                             nfa::MatchSet::Char(c) => {
-                                trans.trans[*c as usize].insert(edge.next_id);
+                                trans.table[*c as usize].insert(edge.next_id);
                             }
                             nfa::MatchSet::Range(a, b) => {
                                 for c in *a..=*b {
-                                    trans.trans[c as usize].insert(edge.next_id);
+                                    trans.table[c as usize].insert(edge.next_id);
                                 }
                             }
                         }
                     }
                 }
                 nfa::EdgeAction::MatchExcludeSet(set) => {
-                    let mut exclude_trans = Transition::new(256);
-                    let mut next_nodes = IndexSet::new();
+                    let mut exclude_table = Transition::new(256);
+                    let mut next_indexset = IndexSet::new();
 
                     // calc exclude transition-map
                     for m in set.iter() {
                         match m {
                             nfa::MatchSet::Char(c) => {
-                                exclude_trans.trans[*c as usize].insert(edge.next_id);
-                                next_nodes.insert(edge.next_id);
+                                exclude_table.table[*c as usize].insert(edge.next_id);
+                                next_indexset.insert(edge.next_id);
                             }
                             nfa::MatchSet::Range(a, b) => {
                                 for c in *a..=*b {
-                                    exclude_trans.trans[c as usize].insert(edge.next_id);
-                                    next_nodes.insert(edge.next_id);
+                                    exclude_table.table[c as usize].insert(edge.next_id);
+                                    next_indexset.insert(edge.next_id);
                                 }
                             }
                         }
                     }
 
                     // apply exclude transition-map
-                    for (i, set1) in trans.trans.iter_mut().enumerate() {
-                        let set2 = &exclude_trans.trans[i];
-                        *set1 = &*set1 | &(&next_nodes - set2);
+                    for (i, indexset) in trans.table.iter_mut().enumerate() {
+                        let exclude_set = &exclude_table.table[i];
+                        *indexset = &*indexset | &(&next_indexset - exclude_set);
                     }
                 }
                 nfa::EdgeAction::MatchSOL => {
-                    trans.start_line.insert(edge.next_id);
+                    trans.sol_next_index.insert(edge.next_id);
                 }
                 nfa::EdgeAction::MatchEOL => {
-                    trans.end_line.insert(edge.next_id);
+                    trans.eol_next_index.insert(edge.next_id);
                 }
             }
         }
 
         // resolve empty transition
-        for index in trans.trans.iter_mut() {
-            *index = self.resolve_empty_trans(index);
+        for index in trans.table.iter_mut() {
+            *index = self.resolve_empty_transition(index);
         }
-        trans.start_line = self.resolve_empty_trans(&trans.start_line);
-        trans.end_line = self.resolve_empty_trans(&trans.end_line);
+        trans.sol_next_index = self.resolve_empty_transition(&trans.sol_next_index);
+        trans.eol_next_index = self.resolve_empty_transition(&trans.eol_next_index);
 
         trans
     }
 
-    fn resolve_empty_trans(&self, index: &IndexSet) -> IndexSet {
+    fn resolve_empty_transition(&self, index: &IndexSet) -> IndexSet {
         let mut result_index = BTreeSet::new();
 
         let mut q: VecDeque<_> = index.iter().collect();
