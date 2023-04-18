@@ -1,4 +1,4 @@
-use super::dfa::Dfa;
+use super::Dfa;
 
 pub(crate) struct Matcher<'a> {
     dfa: &'a Dfa,

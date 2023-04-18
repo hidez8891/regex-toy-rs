@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, VecDeque};
 
-use super::nfa::{Edge, EdgeAction, MatchSet, Node};
+use super::{Edge, EdgeAction, MatchSet, Node};
 use crate::parser::{
     ast::{AstKind, GreedyKind, MatchKind, PositionKind, RepeatKind},
     Ast,

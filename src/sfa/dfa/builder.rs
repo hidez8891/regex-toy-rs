@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
-use super::dfa::{Dfa, IndexSet, Node, Transition};
-use crate::sfa::nfa::nfa;
+use super::{Dfa, IndexSet, Node, Transition};
+use crate::sfa::nfa;
 
 pub(crate) struct Builder<'a> {
     nfa_nodes: &'a Vec<nfa::Node>,

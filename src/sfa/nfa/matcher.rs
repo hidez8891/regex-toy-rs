@@ -1,4 +1,4 @@
-use super::nfa::{EdgeAction, MatchSet, Node};
+use super::{EdgeAction, MatchSet, Node};
 
 pub(crate) struct Matcher<'a> {
     nodes: &'a Vec<Node>,
