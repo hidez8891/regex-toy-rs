@@ -6,7 +6,8 @@ pub struct Ast {
 
 #[derive(Debug, PartialEq)]
 pub enum AstKind {
-    Group,
+    NonCapureGroup,
+    CaptureGroup(usize),
     Union,
     IncludeSet,
     ExcludeSet,

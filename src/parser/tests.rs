@@ -5,9 +5,9 @@ fn run(pattern: &str) -> Result<Ast, String> {
     Parser::parse(pattern)
 }
 
-fn makeG(children: Vec<Ast>) -> Ast {
+fn make_top(children: Vec<Ast>) -> Ast {
     Ast {
-        kind: AstKind::Group,
+        kind: AstKind::CaptureGroup(0),
         children,
     }
 }
@@ -30,7 +30,7 @@ mod basic_match {
     #[test]
     fn match_char() {
         let src = "abc";
-        let expect = Ok(makeG(vec![
+        let expect = Ok(make_top(vec![
             make1(AstKind::Match(MatchKind::Char('a'))),
             make1(AstKind::Match(MatchKind::Char('b'))),
             make1(AstKind::Match(MatchKind::Char('c'))),
@@ -42,7 +42,7 @@ mod basic_match {
     #[test]
     fn match_metachar() {
         let src = r"a\+c";
-        let expect = Ok(makeG(vec![
+        let expect = Ok(make_top(vec![
             make1(AstKind::Match(MatchKind::Char('a'))),
             make1(AstKind::Match(MatchKind::Char('+'))),
             make1(AstKind::Match(MatchKind::Char('c'))),
@@ -55,7 +55,7 @@ mod basic_match {
     fn match_any() {
         {
             let src = "a.c";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make1(AstKind::Match(MatchKind::Any)),
                 make1(AstKind::Match(MatchKind::Char('c'))),
@@ -65,7 +65,7 @@ mod basic_match {
         }
         {
             let src = "a.";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make1(AstKind::Match(MatchKind::Any)),
             ]));
@@ -77,7 +77,7 @@ mod basic_match {
     #[test]
     fn match_sol() {
         let src = "^ab";
-        let expect = Ok(makeG(vec![
+        let expect = Ok(make_top(vec![
             make1(AstKind::Position(PositionKind::SoL)),
             make1(AstKind::Match(MatchKind::Char('a'))),
             make1(AstKind::Match(MatchKind::Char('b'))),
@@ -89,7 +89,7 @@ mod basic_match {
     #[test]
     fn match_eol() {
         let src = "ab$";
-        let expect = Ok(makeG(vec![
+        let expect = Ok(make_top(vec![
             make1(AstKind::Match(MatchKind::Char('a'))),
             make1(AstKind::Match(MatchKind::Char('b'))),
             make1(AstKind::Position(PositionKind::EoL)),
@@ -103,10 +103,10 @@ mod basic_match {
 fn group() {
     {
         let src = "a(bc)d";
-        let expect = Ok(makeG(vec![
+        let expect = Ok(make_top(vec![
             make1(AstKind::Match(MatchKind::Char('a'))),
             make2(
-                AstKind::Group,
+                AstKind::CaptureGroup(1),
                 vec![
                     make1(AstKind::Match(MatchKind::Char('b'))),
                     make1(AstKind::Match(MatchKind::Char('c'))),
@@ -119,13 +119,43 @@ fn group() {
     }
     {
         let src = "a(bc)";
-        let expect = Ok(makeG(vec![
+        let expect = Ok(make_top(vec![
             make1(AstKind::Match(MatchKind::Char('a'))),
             make2(
-                AstKind::Group,
+                AstKind::CaptureGroup(1),
                 vec![
                     make1(AstKind::Match(MatchKind::Char('b'))),
                     make1(AstKind::Match(MatchKind::Char('c'))),
+                ],
+            ),
+        ]));
+
+        assert_eq!(run(src), expect);
+    }
+    {
+        let src = "a(bc(de)f)(gh)";
+        let expect = Ok(make_top(vec![
+            make1(AstKind::Match(MatchKind::Char('a'))),
+            make2(
+                AstKind::CaptureGroup(1),
+                vec![
+                    make1(AstKind::Match(MatchKind::Char('b'))),
+                    make1(AstKind::Match(MatchKind::Char('c'))),
+                    make2(
+                        AstKind::CaptureGroup(2),
+                        vec![
+                            make1(AstKind::Match(MatchKind::Char('d'))),
+                            make1(AstKind::Match(MatchKind::Char('e'))),
+                        ],
+                    ),
+                    make1(AstKind::Match(MatchKind::Char('f'))),
+                ],
+            ),
+            make2(
+                AstKind::CaptureGroup(3),
+                vec![
+                    make1(AstKind::Match(MatchKind::Char('g'))),
+                    make1(AstKind::Match(MatchKind::Char('h'))),
                 ],
             ),
         ]));
@@ -137,11 +167,11 @@ fn group() {
 #[test]
 fn union() {
     let src = "abc|def|ghi";
-    let expect = Ok(makeG(vec![make2(
+    let expect = Ok(make_top(vec![make2(
         AstKind::Union,
         vec![
             make2(
-                AstKind::Group,
+                AstKind::NonCapureGroup,
                 vec![
                     make1(AstKind::Match(MatchKind::Char('a'))),
                     make1(AstKind::Match(MatchKind::Char('b'))),
@@ -149,7 +179,7 @@ fn union() {
                 ],
             ),
             make2(
-                AstKind::Group,
+                AstKind::NonCapureGroup,
                 vec![
                     make1(AstKind::Match(MatchKind::Char('d'))),
                     make1(AstKind::Match(MatchKind::Char('e'))),
@@ -157,7 +187,7 @@ fn union() {
                 ],
             ),
             make2(
-                AstKind::Group,
+                AstKind::NonCapureGroup,
                 vec![
                     make1(AstKind::Match(MatchKind::Char('g'))),
                     make1(AstKind::Match(MatchKind::Char('h'))),
@@ -178,7 +208,7 @@ mod greedy {
     fn star() {
         {
             let src = "ab*c";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Star(GreedyKind::Greedy),
@@ -191,7 +221,7 @@ mod greedy {
         }
         {
             let src = "ab*";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Star(GreedyKind::Greedy),
@@ -207,7 +237,7 @@ mod greedy {
     fn plus() {
         {
             let src = "ab+c";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Plus(GreedyKind::Greedy),
@@ -220,7 +250,7 @@ mod greedy {
         }
         {
             let src = "ab+";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Plus(GreedyKind::Greedy),
@@ -236,7 +266,7 @@ mod greedy {
     fn option() {
         {
             let src = "ab?c";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Option(GreedyKind::Greedy),
@@ -249,7 +279,7 @@ mod greedy {
         }
         {
             let src = "ab?";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Option(GreedyKind::Greedy),
@@ -269,7 +299,7 @@ mod greedy {
         fn repeat() {
             {
                 let src = "a{10}";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(RepeatKind::Num(10), RepeatKind::Num(10), GreedyKind::Greedy),
                     vec![make1(AstKind::Match(MatchKind::Char('a')))],
                 )]));
@@ -278,7 +308,7 @@ mod greedy {
             }
             {
                 let src = "abc{10}";
-                let expect = Ok(makeG(vec![
+                let expect = Ok(make_top(vec![
                     make1(AstKind::Match(MatchKind::Char('a'))),
                     make1(AstKind::Match(MatchKind::Char('b'))),
                     make2(
@@ -295,10 +325,10 @@ mod greedy {
             }
             {
                 let src = "(abc){10}";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(RepeatKind::Num(10), RepeatKind::Num(10), GreedyKind::Greedy),
                     vec![make2(
-                        AstKind::Group,
+                        AstKind::CaptureGroup(1),
                         vec![
                             make1(AstKind::Match(MatchKind::Char('a'))),
                             make1(AstKind::Match(MatchKind::Char('b'))),
@@ -315,7 +345,7 @@ mod greedy {
         fn repeat_min() {
             {
                 let src = "a{1,}";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(RepeatKind::Num(1), RepeatKind::Infinity, GreedyKind::Greedy),
                     vec![make1(AstKind::Match(MatchKind::Char('a')))],
                 )]));
@@ -324,7 +354,7 @@ mod greedy {
             }
             {
                 let src = "abc{1,}";
-                let expect = Ok(makeG(vec![
+                let expect = Ok(make_top(vec![
                     make1(AstKind::Match(MatchKind::Char('a'))),
                     make1(AstKind::Match(MatchKind::Char('b'))),
                     make2(
@@ -341,10 +371,10 @@ mod greedy {
             }
             {
                 let src = "(abc){1,}";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(RepeatKind::Num(1), RepeatKind::Infinity, GreedyKind::Greedy),
                     vec![make2(
-                        AstKind::Group,
+                        AstKind::CaptureGroup(1),
                         vec![
                             make1(AstKind::Match(MatchKind::Char('a'))),
                             make1(AstKind::Match(MatchKind::Char('b'))),
@@ -361,7 +391,7 @@ mod greedy {
         fn repeat_range() {
             {
                 let src = "a{1,10}";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(RepeatKind::Num(1), RepeatKind::Num(10), GreedyKind::Greedy),
                     vec![make1(AstKind::Match(MatchKind::Char('a')))],
                 )]));
@@ -370,7 +400,7 @@ mod greedy {
             }
             {
                 let src = "abc{1,10}";
-                let expect = Ok(makeG(vec![
+                let expect = Ok(make_top(vec![
                     make1(AstKind::Match(MatchKind::Char('a'))),
                     make1(AstKind::Match(MatchKind::Char('b'))),
                     make2(
@@ -387,10 +417,10 @@ mod greedy {
             }
             {
                 let src = "(abc){1,10}";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(RepeatKind::Num(1), RepeatKind::Num(10), GreedyKind::Greedy),
                     vec![make2(
-                        AstKind::Group,
+                        AstKind::CaptureGroup(1),
                         vec![
                             make1(AstKind::Match(MatchKind::Char('a'))),
                             make1(AstKind::Match(MatchKind::Char('b'))),
@@ -413,7 +443,7 @@ mod non_greedy {
     fn star() {
         {
             let src = "ab*?c";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Star(GreedyKind::NonGreedy),
@@ -426,7 +456,7 @@ mod non_greedy {
         }
         {
             let src = "ab*?";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Star(GreedyKind::NonGreedy),
@@ -442,7 +472,7 @@ mod non_greedy {
     fn plus() {
         {
             let src = "ab+?c";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Plus(GreedyKind::NonGreedy),
@@ -455,7 +485,7 @@ mod non_greedy {
         }
         {
             let src = "ab+?";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Plus(GreedyKind::NonGreedy),
@@ -471,7 +501,7 @@ mod non_greedy {
     fn option() {
         {
             let src = "ab??c";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Option(GreedyKind::NonGreedy),
@@ -484,7 +514,7 @@ mod non_greedy {
         }
         {
             let src = "ab??";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::Option(GreedyKind::NonGreedy),
@@ -504,7 +534,7 @@ mod non_greedy {
         fn repeat() {
             {
                 let src = "a{10}?";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(
                         RepeatKind::Num(10),
                         RepeatKind::Num(10),
@@ -517,7 +547,7 @@ mod non_greedy {
             }
             {
                 let src = "abc{10}?";
-                let expect = Ok(makeG(vec![
+                let expect = Ok(make_top(vec![
                     make1(AstKind::Match(MatchKind::Char('a'))),
                     make1(AstKind::Match(MatchKind::Char('b'))),
                     make2(
@@ -534,14 +564,14 @@ mod non_greedy {
             }
             {
                 let src = "(abc){10}?";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(
                         RepeatKind::Num(10),
                         RepeatKind::Num(10),
                         GreedyKind::NonGreedy,
                     ),
                     vec![make2(
-                        AstKind::Group,
+                        AstKind::CaptureGroup(1),
                         vec![
                             make1(AstKind::Match(MatchKind::Char('a'))),
                             make1(AstKind::Match(MatchKind::Char('b'))),
@@ -558,7 +588,7 @@ mod non_greedy {
         fn repeat_min() {
             {
                 let src = "a{1,}?";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(
                         RepeatKind::Num(1),
                         RepeatKind::Infinity,
@@ -571,7 +601,7 @@ mod non_greedy {
             }
             {
                 let src = "abc{1,}?";
-                let expect = Ok(makeG(vec![
+                let expect = Ok(make_top(vec![
                     make1(AstKind::Match(MatchKind::Char('a'))),
                     make1(AstKind::Match(MatchKind::Char('b'))),
                     make2(
@@ -588,14 +618,14 @@ mod non_greedy {
             }
             {
                 let src = "(abc){1,}?";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(
                         RepeatKind::Num(1),
                         RepeatKind::Infinity,
                         GreedyKind::NonGreedy,
                     ),
                     vec![make2(
-                        AstKind::Group,
+                        AstKind::CaptureGroup(1),
                         vec![
                             make1(AstKind::Match(MatchKind::Char('a'))),
                             make1(AstKind::Match(MatchKind::Char('b'))),
@@ -612,7 +642,7 @@ mod non_greedy {
         fn repeat_range() {
             {
                 let src = "a{1,10}?";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(
                         RepeatKind::Num(1),
                         RepeatKind::Num(10),
@@ -625,7 +655,7 @@ mod non_greedy {
             }
             {
                 let src = "abc{1,10}?";
-                let expect = Ok(makeG(vec![
+                let expect = Ok(make_top(vec![
                     make1(AstKind::Match(MatchKind::Char('a'))),
                     make1(AstKind::Match(MatchKind::Char('b'))),
                     make2(
@@ -642,14 +672,14 @@ mod non_greedy {
             }
             {
                 let src = "(abc){1,10}?";
-                let expect = Ok(makeG(vec![make2(
+                let expect = Ok(make_top(vec![make2(
                     AstKind::Repeat(
                         RepeatKind::Num(1),
                         RepeatKind::Num(10),
                         GreedyKind::NonGreedy,
                     ),
                     vec![make2(
-                        AstKind::Group,
+                        AstKind::CaptureGroup(1),
                         vec![
                             make1(AstKind::Match(MatchKind::Char('a'))),
                             make1(AstKind::Match(MatchKind::Char('b'))),
@@ -672,7 +702,7 @@ mod set {
     fn positive() {
         {
             let src = "a[b-z]d";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::IncludeSet,
@@ -685,7 +715,7 @@ mod set {
         }
         {
             let src = "[b-z]";
-            let expect = Ok(makeG(vec![make2(
+            let expect = Ok(make_top(vec![make2(
                 AstKind::IncludeSet,
                 vec![make1(AstKind::Match(MatchKind::Range('b', 'z')))],
             )]));
@@ -694,7 +724,7 @@ mod set {
         }
         {
             let src = "[bcd]";
-            let expect = Ok(makeG(vec![make2(
+            let expect = Ok(make_top(vec![make2(
                 AstKind::IncludeSet,
                 vec![
                     make1(AstKind::Match(MatchKind::Char('b'))),
@@ -707,7 +737,7 @@ mod set {
         }
         {
             let src = "a[bc-yz]d";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::IncludeSet,
@@ -724,7 +754,7 @@ mod set {
         }
         {
             let src = "[z-z]";
-            let expect = Ok(makeG(vec![make2(
+            let expect = Ok(make_top(vec![make2(
                 AstKind::IncludeSet,
                 vec![make1(AstKind::Match(MatchKind::Range('z', 'z')))],
             )]));
@@ -741,7 +771,7 @@ mod set {
     fn negative() {
         {
             let src = "a[^b-z]d";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::ExcludeSet,
@@ -754,7 +784,7 @@ mod set {
         }
         {
             let src = "[^b-z]";
-            let expect = Ok(makeG(vec![make2(
+            let expect = Ok(make_top(vec![make2(
                 AstKind::ExcludeSet,
                 vec![make1(AstKind::Match(MatchKind::Range('b', 'z')))],
             )]));
@@ -763,7 +793,7 @@ mod set {
         }
         {
             let src = "[^bcd]";
-            let expect = Ok(makeG(vec![make2(
+            let expect = Ok(make_top(vec![make2(
                 AstKind::ExcludeSet,
                 vec![
                     make1(AstKind::Match(MatchKind::Char('b'))),
@@ -776,7 +806,7 @@ mod set {
         }
         {
             let src = "a[^bc-yz]d";
-            let expect = Ok(makeG(vec![
+            let expect = Ok(make_top(vec![
                 make1(AstKind::Match(MatchKind::Char('a'))),
                 make2(
                     AstKind::ExcludeSet,
@@ -793,7 +823,7 @@ mod set {
         }
         {
             let src = "[^z-z]";
-            let expect = Ok(makeG(vec![make2(
+            let expect = Ok(make_top(vec![make2(
                 AstKind::ExcludeSet,
                 vec![make1(AstKind::Match(MatchKind::Range('z', 'z')))],
             )]));

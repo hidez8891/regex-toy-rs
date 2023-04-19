@@ -2,7 +2,7 @@
 //
 // root      = concat
 // concat    = ( group | set | repeat | union | position | matcher )+
-// group     = '(' concat ')'
+// group     = '(' concat ')' | '(' '?' ':' concat ')'
 // set       = '[' set-items ']'
 // set-items = ( char | char '-' char )+
 // repeat    = repeat_g | repeat_ng

@@ -24,6 +24,7 @@ const META_CHARS: [char; 15] = [
 
 pub(crate) struct Parser {
     stream: Peekable<IntoIter<char>>,
+    capture_id: usize,
 }
 
 impl Parser {
@@ -34,12 +35,16 @@ impl Parser {
                 .collect::<Vec<char>>()
                 .into_iter()
                 .peekable(),
+            capture_id: 1,
         };
 
         let ast = parser.parse_concat()?;
         match parser.stream.next() {
             Some(c) => Err(format!("parse is failed: {}", c)),
-            None => Ok(ast),
+            None => Ok(Ast {
+                kind: AstKind::CaptureGroup(0),
+                children: ast.children,
+            }),
         }
     }
 
@@ -74,7 +79,7 @@ impl Parser {
 
                     children.push(ast.unwrap());
                     let lhs = Ast {
-                        kind: AstKind::Group,
+                        kind: AstKind::NonCapureGroup,
                         children,
                     };
                     children = vec![];
@@ -137,7 +142,7 @@ impl Parser {
         }
 
         return Ok(Ast {
-            kind: AstKind::Group,
+            kind: AstKind::NonCapureGroup,
             children,
         });
     }
@@ -188,13 +193,19 @@ impl Parser {
             return Err(format!("ERROR: want group open token"));
         }
 
+        let capture_id = self.capture_id;
+        self.capture_id += 1;
+
         let ast = self.parse_concat()?;
 
         if self.stream.next_if_eq(&')').is_none() {
             return Err(format!("ERROR: want group close token"));
         }
 
-        return Ok(ast);
+        return Ok(Ast {
+            kind: AstKind::CaptureGroup(capture_id),
+            children: ast.children,
+        });
     }
 
     fn parse_set(&mut self) -> Result<Ast, String> {
