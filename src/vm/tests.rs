@@ -82,7 +82,7 @@ mod basic_match {
 }
 
 #[test]
-fn group() {
+fn capture_group() {
     {
         let src = "a(bc)d";
         let vm = run(src);
@@ -101,6 +101,47 @@ fn group() {
         assert_eq!(vm.is_match("a"), None);
         assert_eq!(vm.is_match("zabc"), Some("abc"));
         assert_eq!(vm.is_match("abcd"), Some("abc"));
+    }
+    {
+        let src = "a(bc(de)f)(gh)";
+        let vm = run(src);
+
+        assert_eq!(vm.is_match("abcdefgh"), Some("abcdefgh"));
+        assert_eq!(vm.is_match("abcdef"), None);
+        assert_eq!(vm.is_match("abcgh"), None);
+        assert_eq!(vm.is_match("agh"), None);
+    }
+}
+
+#[test]
+fn noncapture_group() {
+    {
+        let src = "a(?:bc)d";
+        let vm = run(src);
+
+        assert_eq!(vm.is_match("abcd"), Some("abcd"));
+        assert_eq!(vm.is_match("abc"), None);
+        assert_eq!(vm.is_match("ad"), None);
+        assert_eq!(vm.is_match("zabcd"), Some("abcd"));
+        assert_eq!(vm.is_match("abcdz"), Some("abcd"));
+    }
+    {
+        let src = "a(?:bc)";
+        let vm = run(src);
+
+        assert_eq!(vm.is_match("abc"), Some("abc"));
+        assert_eq!(vm.is_match("a"), None);
+        assert_eq!(vm.is_match("zabc"), Some("abc"));
+        assert_eq!(vm.is_match("abcd"), Some("abc"));
+    }
+    {
+        let src = "a(?:bc(?:de)f)(?:gh)";
+        let vm = run(src);
+
+        assert_eq!(vm.is_match("abcdefgh"), Some("abcdefgh"));
+        assert_eq!(vm.is_match("abcdef"), None);
+        assert_eq!(vm.is_match("abcgh"), None);
+        assert_eq!(vm.is_match("agh"), None);
     }
 }
 

@@ -15,7 +15,8 @@ impl Compiler {
 
     fn compile_root(ast: &Ast) -> Vec<Inst> {
         match &ast.kind {
-            AstKind::Group => Self::compile_group(ast),
+            AstKind::CaptureGroup(_) => Self::compile_group(ast),
+            AstKind::NonCaptureGroup => Self::compile_group(ast),
             AstKind::Union => Self::compile_union(ast),
             AstKind::IncludeSet => Self::compile_include_set(ast),
             AstKind::ExcludeSet => Self::compile_exclude_set(ast),
