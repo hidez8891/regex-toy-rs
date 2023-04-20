@@ -100,7 +100,7 @@ mod basic_match {
 }
 
 #[test]
-fn group() {
+fn capture_group() {
     {
         let src = "a(bc)d";
         let expect = Ok(make_top(vec![
@@ -165,13 +165,78 @@ fn group() {
 }
 
 #[test]
+fn noncapture_group() {
+    {
+        let src = "a(?:bc)d";
+        let expect = Ok(make_top(vec![
+            make1(AstKind::Match(MatchKind::Char('a'))),
+            make2(
+                AstKind::NonCaptureGroup,
+                vec![
+                    make1(AstKind::Match(MatchKind::Char('b'))),
+                    make1(AstKind::Match(MatchKind::Char('c'))),
+                ],
+            ),
+            make1(AstKind::Match(MatchKind::Char('d'))),
+        ]));
+
+        assert_eq!(run(src), expect);
+    }
+    {
+        let src = "a(?:bc)";
+        let expect = Ok(make_top(vec![
+            make1(AstKind::Match(MatchKind::Char('a'))),
+            make2(
+                AstKind::NonCaptureGroup,
+                vec![
+                    make1(AstKind::Match(MatchKind::Char('b'))),
+                    make1(AstKind::Match(MatchKind::Char('c'))),
+                ],
+            ),
+        ]));
+
+        assert_eq!(run(src), expect);
+    }
+    {
+        let src = "a(?:bc(?:de)f)(?:gh)";
+        let expect = Ok(make_top(vec![
+            make1(AstKind::Match(MatchKind::Char('a'))),
+            make2(
+                AstKind::NonCaptureGroup,
+                vec![
+                    make1(AstKind::Match(MatchKind::Char('b'))),
+                    make1(AstKind::Match(MatchKind::Char('c'))),
+                    make2(
+                        AstKind::NonCaptureGroup,
+                        vec![
+                            make1(AstKind::Match(MatchKind::Char('d'))),
+                            make1(AstKind::Match(MatchKind::Char('e'))),
+                        ],
+                    ),
+                    make1(AstKind::Match(MatchKind::Char('f'))),
+                ],
+            ),
+            make2(
+                AstKind::NonCaptureGroup,
+                vec![
+                    make1(AstKind::Match(MatchKind::Char('g'))),
+                    make1(AstKind::Match(MatchKind::Char('h'))),
+                ],
+            ),
+        ]));
+
+        assert_eq!(run(src), expect);
+    }
+}
+
+#[test]
 fn union() {
     let src = "abc|def|ghi";
     let expect = Ok(make_top(vec![make2(
         AstKind::Union,
         vec![
             make2(
-                AstKind::NonCapureGroup,
+                AstKind::NonCaptureGroup,
                 vec![
                     make1(AstKind::Match(MatchKind::Char('a'))),
                     make1(AstKind::Match(MatchKind::Char('b'))),
@@ -179,7 +244,7 @@ fn union() {
                 ],
             ),
             make2(
-                AstKind::NonCapureGroup,
+                AstKind::NonCaptureGroup,
                 vec![
                     make1(AstKind::Match(MatchKind::Char('d'))),
                     make1(AstKind::Match(MatchKind::Char('e'))),
@@ -187,7 +252,7 @@ fn union() {
                 ],
             ),
             make2(
-                AstKind::NonCapureGroup,
+                AstKind::NonCaptureGroup,
                 vec![
                     make1(AstKind::Match(MatchKind::Char('g'))),
                     make1(AstKind::Match(MatchKind::Char('h'))),

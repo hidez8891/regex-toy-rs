@@ -11,7 +11,7 @@ const META_CHARS: [char; 15] = [
     '|', // union
     '*', // star
     '+', // plus
-    '?', // option or non-greedy
+    '?', // option or non-greedy or parameter
     ',', // repeat range separator
     '-', // set range separator
     '^', // position Start-of-Line
@@ -79,7 +79,7 @@ impl Parser {
 
                     children.push(ast.unwrap());
                     let lhs = Ast {
-                        kind: AstKind::NonCapureGroup,
+                        kind: AstKind::NonCaptureGroup,
                         children,
                     };
                     children = vec![];
@@ -142,7 +142,7 @@ impl Parser {
         }
 
         return Ok(Ast {
-            kind: AstKind::NonCapureGroup,
+            kind: AstKind::NonCaptureGroup,
             children,
         });
     }
@@ -193,8 +193,18 @@ impl Parser {
             return Err(format!("ERROR: want group open token"));
         }
 
-        let capture_id = self.capture_id;
-        self.capture_id += 1;
+        let mut capture_id = 0;
+        if self.stream.next_if_eq(&'?').is_some() {
+            if self.stream.next_if_eq(&':').is_none() {
+                return match self.stream.next() {
+                    Some(c) => Err(format!("ERROR: want ':', get '{}'", c)),
+                    None => Err(format!("ERROR: want ':', get EOL")),
+                };
+            }
+        } else {
+            capture_id = self.capture_id;
+            self.capture_id += 1;
+        }
 
         let ast = self.parse_concat()?;
 
@@ -202,10 +212,17 @@ impl Parser {
             return Err(format!("ERROR: want group close token"));
         }
 
-        return Ok(Ast {
-            kind: AstKind::CaptureGroup(capture_id),
-            children: ast.children,
-        });
+        if capture_id == 0 {
+            return Ok(Ast {
+                kind: AstKind::NonCaptureGroup,
+                children: ast.children,
+            });
+        } else {
+            return Ok(Ast {
+                kind: AstKind::CaptureGroup(capture_id),
+                children: ast.children,
+            });
+        }
     }
 
     fn parse_set(&mut self) -> Result<Ast, String> {
