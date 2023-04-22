@@ -8,13 +8,17 @@ use crate::parser::{
 
 pub(crate) struct Builder {
     nodes: Vec<Node>,
+    max_capture_id: usize,
 }
 
 impl Builder {
-    pub fn build(ast: &Ast) -> Vec<Node> {
-        let mut builder = Builder { nodes: vec![] };
+    pub fn build(ast: &Ast) -> (Vec<Node>, usize) {
+        let mut builder = Builder {
+            nodes: vec![],
+            max_capture_id: 0,
+        };
         builder.build_(ast);
-        return builder.nodes;
+        return (builder.nodes, builder.max_capture_id + 1);
     }
 
     fn build_(&mut self, ast: &Ast) {
@@ -22,10 +26,19 @@ impl Builder {
         self.nodes.push(Node { nexts: vec![] }); // submit
         self.nodes.push(Node { nexts: vec![] }); // fail
 
-        let node_id = self.build_root(ast, 1);
+        let dst_id = self.nodes.len();
+        self.nodes.push(Node {
+            nexts: vec![Edge {
+                action: EdgeAction::CaptureEnd(0),
+                next_id: 1,
+                is_greedy: true,
+            }],
+        });
+
+        let node_id = self.build_root(ast, dst_id);
 
         self.nodes[0].nexts.push(Edge {
-            action: EdgeAction::Asap,
+            action: EdgeAction::CaptureStart(0),
             next_id: node_id,
             is_greedy: true,
         });
@@ -33,7 +46,7 @@ impl Builder {
 
     fn build_root(&mut self, ast: &Ast, dst_id: usize) -> usize {
         match &ast.kind {
-            AstKind::Group => self.build_group(ast, dst_id),
+            AstKind::CaptureGroup(_) | AstKind::NonCaptureGroup => self.build_group(ast, dst_id),
             AstKind::Union => self.build_union(ast, dst_id),
             AstKind::IncludeSet => self.build_include_set(ast, dst_id),
             AstKind::ExcludeSet => self.build_exclude_set(ast, dst_id),
@@ -48,10 +61,42 @@ impl Builder {
 
     fn build_group(&mut self, ast: &Ast, dst_id: usize) -> usize {
         let mut dst_id = dst_id;
+
+        let mut cap_id = 0;
+        if let AstKind::CaptureGroup(id) = &ast.kind {
+            cap_id = *id;
+            if self.max_capture_id < cap_id {
+                self.max_capture_id = cap_id;
+            }
+
+            let node_id = self.nodes.len();
+            self.nodes.push(Node {
+                nexts: vec![Edge {
+                    action: EdgeAction::CaptureEnd(cap_id),
+                    next_id: dst_id,
+                    is_greedy: true,
+                }],
+            });
+            dst_id = node_id;
+        }
+
         for child in ast.children.iter().rev() {
             let match_id = self.build_root(child, dst_id);
             dst_id = match_id;
         }
+
+        if cap_id > 0 {
+            let node_id = self.nodes.len();
+            self.nodes.push(Node {
+                nexts: vec![Edge {
+                    action: EdgeAction::CaptureStart(cap_id),
+                    next_id: dst_id,
+                    is_greedy: true,
+                }],
+            });
+            dst_id = node_id;
+        }
+
         dst_id
     }
 
