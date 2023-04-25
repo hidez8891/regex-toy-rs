@@ -22,9 +22,13 @@ impl Dfa {
         Ok(dfa)
     }
 
-    pub fn is_match<'a>(&self, str: &'a str) -> Option<&'a str> {
+    pub fn is_match<'a>(&self, str: &'a str) -> bool {
         let mut matcher = Matcher::new(&self);
-        matcher.execute(str)
+        matcher.execute(str).is_some()
+    }
+
+    pub fn captures<'a>(&self, str: &'a str) -> Vec<&'a str> {
+        todo!()
     }
 }
 

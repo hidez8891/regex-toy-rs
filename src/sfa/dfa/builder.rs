@@ -73,7 +73,9 @@ impl<'a> Builder<'a> {
             }
 
             match &edge.action {
-                nfa::EdgeAction::Asap => { /* nothing */ }
+                nfa::EdgeAction::Asap
+                | nfa::EdgeAction::CaptureStart(_)
+                | nfa::EdgeAction::CaptureEnd(_) => { /* nothing */ }
                 nfa::EdgeAction::Match(c) => {
                     trans.table[*c as usize].insert(edge.next_id);
                 }
@@ -151,8 +153,13 @@ impl<'a> Builder<'a> {
             }
 
             for edge in self.nfa_nodes[*i].nexts.iter() {
-                if let nfa::EdgeAction::Asap = edge.action {
-                    q.push_back(&edge.next_id);
+                match edge.action {
+                    nfa::EdgeAction::Asap
+                    | nfa::EdgeAction::CaptureStart(_)
+                    | nfa::EdgeAction::CaptureEnd(_) => {
+                        q.push_back(&edge.next_id);
+                    }
+                    _ => { /* nothing */ }
                 }
             }
         }
