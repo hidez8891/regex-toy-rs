@@ -10,17 +10,29 @@ mod tests;
 
 pub struct Vm {
     insts: Vec<Inst>,
+    capture_size: usize,
 }
 
 impl Vm {
     pub fn new(pattern: &str) -> Result<Vm, String> {
         let ast = Parser::parse(pattern)?;
-        let insts = Compiler::compile(&ast);
-        Ok(Vm { insts })
+        let (insts, capture_size) = Compiler::compile(&ast);
+
+        Ok(Vm {
+            insts,
+            capture_size,
+        })
     }
 
-    pub fn is_match<'a>(&self, str: &'a str) -> Option<&'a str> {
-        let mut exec = Executer::new(&self.insts);
+    pub fn is_match<'a>(&self, str: &'a str) -> bool {
+        let mut exec = Executer::new(&self.insts, self.capture_size);
+        exec.capture_mode(false);
+        !exec.execute(str).is_empty()
+    }
+
+    pub fn captures<'a>(&self, str: &'a str) -> Vec<&'a str> {
+        let mut exec = Executer::new(&self.insts, self.capture_size);
+        exec.capture_mode(true);
         exec.execute(str)
     }
 

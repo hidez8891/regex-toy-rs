@@ -3,16 +3,16 @@ use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use super::{Dfa, IndexSet, Node, Transition};
 use crate::sfa::nfa;
 
-pub(crate) struct Builder<'a> {
-    nfa_nodes: &'a Vec<nfa::Node>,
+pub(crate) struct Builder {
+    nfa: nfa::Nfa,
     dfa_nodes: Vec<Node>,
     dfa_indexmap: HashMap<IndexSet, usize>,
 }
 
-impl<'a> Builder<'a> {
-    pub fn build(nfa: &'a nfa::Nfa) -> Dfa {
+impl Builder {
+    pub fn build(nfa: nfa::Nfa) -> Dfa {
         let mut builder = Builder {
-            nfa_nodes: &nfa.nodes,
+            nfa,
             dfa_nodes: Vec::new(),
             dfa_indexmap: HashMap::new(),
         };
@@ -20,6 +20,7 @@ impl<'a> Builder<'a> {
         builder.build_();
 
         return Dfa {
+            nfa: builder.nfa,
             nodes: builder.dfa_nodes,
             indexmap: builder.dfa_indexmap,
         };
@@ -46,7 +47,7 @@ impl<'a> Builder<'a> {
 
             let mut trans = Transition::new(256);
             for i in index.iter() {
-                let trans_map = self.build_trans_map(&self.nfa_nodes[*i], is_match);
+                let trans_map = self.build_trans_map(&self.nfa.nodes[*i], is_match);
                 trans.merge(&trans_map);
             }
 
@@ -73,7 +74,9 @@ impl<'a> Builder<'a> {
             }
 
             match &edge.action {
-                nfa::EdgeAction::Asap => { /* nothing */ }
+                nfa::EdgeAction::Asap
+                | nfa::EdgeAction::CaptureStart(_)
+                | nfa::EdgeAction::CaptureEnd(_) => { /* nothing */ }
                 nfa::EdgeAction::Match(c) => {
                     trans.table[*c as usize].insert(edge.next_id);
                 }
@@ -150,9 +153,14 @@ impl<'a> Builder<'a> {
                 continue;
             }
 
-            for edge in self.nfa_nodes[*i].nexts.iter() {
-                if let nfa::EdgeAction::Asap = edge.action {
-                    q.push_back(&edge.next_id);
+            for edge in self.nfa.nodes[*i].nexts.iter() {
+                match edge.action {
+                    nfa::EdgeAction::Asap
+                    | nfa::EdgeAction::CaptureStart(_)
+                    | nfa::EdgeAction::CaptureEnd(_) => {
+                        q.push_back(&edge.next_id);
+                    }
+                    _ => { /* nothing */ }
                 }
             }
         }

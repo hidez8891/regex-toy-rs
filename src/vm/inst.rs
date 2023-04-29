@@ -2,6 +2,8 @@
 pub(crate) enum Inst {
     Fail,
     Success,
+    CaptureStart(usize),
+    CaptureEnd(usize),
     Seek(isize),
     Jmp(isize),
     JmpIfTrue(isize),

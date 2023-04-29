@@ -10,6 +10,7 @@ mod matcher;
 mod tests;
 
 pub struct Dfa {
+    nfa: Nfa,
     nodes: Vec<Node>,
     indexmap: HashMap<IndexSet, usize>,
 }
@@ -17,14 +18,18 @@ pub struct Dfa {
 impl Dfa {
     pub fn new(pattern: &str) -> Result<Dfa, String> {
         let nfa = Nfa::new(pattern)?;
-        let dfa = Builder::build(&nfa);
+        let dfa = Builder::build(nfa);
 
         Ok(dfa)
     }
 
-    pub fn is_match<'a>(&self, str: &'a str) -> Option<&'a str> {
+    pub fn is_match<'a>(&self, str: &'a str) -> bool {
         let mut matcher = Matcher::new(&self);
-        matcher.execute(str)
+        matcher.execute(str).is_some()
+    }
+
+    pub fn captures<'a>(&self, str: &'a str) -> Vec<&'a str> {
+        self.nfa.captures(str)
     }
 }
 
