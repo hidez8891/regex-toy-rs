@@ -10,6 +10,7 @@ mod matcher;
 mod tests;
 
 pub struct Dfa {
+    nfa: Nfa,
     nodes: Vec<Node>,
     indexmap: HashMap<IndexSet, usize>,
 }
@@ -17,7 +18,7 @@ pub struct Dfa {
 impl Dfa {
     pub fn new(pattern: &str) -> Result<Dfa, String> {
         let nfa = Nfa::new(pattern)?;
-        let dfa = Builder::build(&nfa);
+        let dfa = Builder::build(nfa);
 
         Ok(dfa)
     }
@@ -28,7 +29,7 @@ impl Dfa {
     }
 
     pub fn captures<'a>(&self, str: &'a str) -> Vec<&'a str> {
-        todo!()
+        self.nfa.captures(str)
     }
 }
 
